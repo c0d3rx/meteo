@@ -80,4 +80,8 @@ select * from observation where station_id=@station and observation_time_unix > 
 
 select *,precip_1m_metric*60  from averages where station_id=@station;
 
+# all stations
 select station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null order by station.priority asc, averages.period asc limit 1;
+
+# specific station
+select station.id,station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null and station.id=@station order by station.priority asc, averages.period asc limit 1;
