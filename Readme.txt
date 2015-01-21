@@ -1,4 +1,5 @@
 
+git config  user.email "user@domain"
 git config user.email
 git push origin master
 
@@ -78,3 +79,5 @@ set @station='LUMEZZANE';
 select * from observation where station_id=@station and observation_time_unix > unix_timestamp() - 3600 order by observation_time_unix limit 100;
 
 select *,precip_1m_metric*60  from averages where station_id=@station;
+
+select station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null order by station.priority asc, averages.period asc limit 1;
