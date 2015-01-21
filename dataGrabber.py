@@ -61,6 +61,13 @@ def update_station(section_name):
             else:
                 wind_gust_kph = None
 
+            precip_1m_metric = tree.find("precip_1hr_metric").text
+            if precip_1m_metric is not None:
+                if float(precip_1m_metric) >= 0:
+                    precip_1m_metric = float(precip_1m_metric)/60
+                else:
+                    precip_1m_metric = None
+
             pressure_mb = tree.find("pressure_mb").text
             solar_radiation = tree.find("solar_radiation").text
         elif station_type in ("Weather Display", "WD"):
@@ -85,27 +92,30 @@ def update_station(section_name):
             wind_gust_kph = float(record[133])*1.852
             pressure_mb = float(record[6])
             solar_radiation = float(record[127])
+            precip_1m_metric = float(record[10])
+
         else:
             raise NameError("station type [%s] not supported" % (station_type))
 
+        # print "precipit %s" % precip_1m_metric
         con = MySQLdb.connect(dbhost, dbuser, dbpasswd, dbname)
         # cur = con.cursor(MySQLdb.cursors.DictCursor)
         cur = con.cursor()
         cur.execute("replace into station (id,label,priority) values (%s,%s,%s)", (station_id, station_name, priority))
 
-        cur.execute("select observation_time_unix from observation where observation_time_unix=%s and station_id='%s'" % (ut,station_id))
+        cur.execute("select observation_time_unix from observation where observation_time_unix=%s and station_id='%s'" % (ut, station_id))
         observation = cur.fetchone()
         if observation is None:
             cur.execute("insert into observation "
-                        "(observation_time_unix,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,solar_radiation) "
-                        "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (ut, observation_time_unparsed, station_id,temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, solar_radiation))
+                        "(observation_time_unix,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,precip_1m_metric,solar_radiation) "
+                        "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (ut, observation_time_unparsed, station_id,temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, solar_radiation))
 
         # compute avg values for wind / wind prevalent direction
         ct = (("5m", 300, 1), ("10m", 600, 2), ("1h", 3600, 4), ("2h", 7200, 5))
         for column, delta, minsamples in ct:
 
-            cur.execute("select wind_kph, wind_degrees, temp_c, relative_humidity, pressure_mb  from observation "
+            cur.execute("select wind_kph, wind_degrees, temp_c, relative_humidity, pressure_mb, precip_1m_metric  from observation "
                         "where station_id=%s and observation_time_unix>unix_timestamp()-%s", (station_id, delta))
             rows = cur.fetchall()
             out = None
@@ -120,6 +130,9 @@ def update_station(section_name):
             cnthu = 0
             press = 0
             cntpress = 0
+            cntrain = 0
+            accrain = 0
+
 # compute average values
             for row in rows:
                 # wind / wind direction
@@ -148,6 +161,10 @@ def update_station(section_name):
                     press += pressure_mb
                     cntpress += 1
                 # print "Samples  %s " % (row[0])
+                if row[5] is not None:
+                    precip_1m_metric = float(row[5])
+                    accrain += precip_1m_metric
+                    cntrain += 1
 
             # wind
             if cnt >= minsamples:
@@ -185,10 +202,15 @@ def update_station(section_name):
             else:
                 at = None
 
+            if cntrain >= minsamples:
+                avgrain = accrain / cntrain
+            else:
+                avgrain = None
+
             print "for %s wind samples %d (%s), wind_dir samples %d (%s)" % (column, cnt, out, cntd, at)
 
-            upd = "replace into averages ( station_id, period, pressure_mb, relative_humidity, temp_c, wind_kph, wind_degrees) values (%s,%s,%s,%s,%s,%s,%s)"
-            cur.execute(upd, (station_id, delta, avgpress, avghu, tavg, out, at))
+            upd = "replace into averages ( station_id, period, pressure_mb, relative_humidity, temp_c, wind_kph, wind_degrees, precip_1m_metric) values (%s,%s,%s,%s,%s,%s,%s,%s)"
+            cur.execute(upd, (station_id, delta, avgpress, avghu, tavg, out, at, avgrain))
 
         # garbage collector
         cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
