@@ -1,4 +1,7 @@
+
 git config user.email
+git push origin master
+
 # Pre-requisites: sudo apt-get install python-mysqldb
 # mysql --user=observations -pobservations --host=localhost observations
 
