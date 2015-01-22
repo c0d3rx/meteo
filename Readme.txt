@@ -85,3 +85,7 @@ select station.label, averages.period,averages.wind_kph,averages.wind_degrees, a
 
 # specific station
 select station.id,station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null and station.id=@station order by station.priority asc, averages.period asc limit 1;
+
+# query alarm
+select station.id,station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null and station.id in ('LUMEZZANE','PINETA_SACCHETTI') and averages.period BETWEEN 120 AND 300  order by station.priority asc, averages.period asc limit 2;
+
