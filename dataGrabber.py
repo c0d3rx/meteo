@@ -10,6 +10,9 @@ import time
 import datetime
 import math
 import pytz
+import traceback
+from multiprocessing.dummy import Pool as ThreadPoll
+import os
 
 configFile = "wind.ini"
 
@@ -20,9 +23,14 @@ def usage():
 
 
 def update_station(section_name):
-    print "Updating %s" % (section_name)
+    matchx = sectionRe.match(section_name)
+    station_name = matchx.group(1)
     station_url = config.get(section_name, "url")
     station_type = config.get(section_name, "type")
+    # priority = config.get(section_name, "priority")
+    priority = priorities[section_name]
+    print "[%s] start updating ( priority is %s)" % (station_name, priority)
+
     # print station_url
     con = None
     try:
@@ -37,7 +45,7 @@ def update_station(section_name):
 
             ut = email_utils.mktime_tz(email_utils.parsedate_tz(observation_time_rfc822))
 
-            print "data time [%s], unixtime [%d] parsed local time [%s]" % (observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S"))
+            print "[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S"))
 
             station_id = tree.find("station_id").text
             temp_c = tree.find("temp_c").text
@@ -84,7 +92,7 @@ def update_station(section_name):
                                    int(record[29]), int(record[30]), int(record[31]), tzinfo=loc_dt)
             ut = time.mktime(dt.timetuple())
 
-            print "data time [%s], unixtime [%d] parsed local time [%s]" % (observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S"))
+            print "[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S"))
             temp_c = float(record[4])
             relative_humidity = float(record[5])
             wind_degrees = float(record[3])
@@ -95,7 +103,7 @@ def update_station(section_name):
             precip_1m_metric = float(record[10])
 
         else:
-            raise NameError("station type [%s] not supported" % (station_type))
+            raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
 
         # print "precipit %s" % precip_1m_metric
         con = MySQLdb.connect(dbhost, dbuser, dbpasswd, dbname)
@@ -112,8 +120,9 @@ def update_station(section_name):
                         (ut, observation_time_unparsed, station_id,temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, solar_radiation))
 
         # compute avg values for wind / wind prevalent direction
-        ct = (("5m", 300, 1), ("10m", 600, 2), ("1h", 3600, 4), ("2h", 7200, 5))
-        for column, delta, minsamples in ct:
+        exec ("ct= %s" % config.get(section_name,"averages"))
+        # ct = ((300, 1), (600, 2), (3600, 4), (7200, 5))
+        for delta, minsamples in ct:
 
             cur.execute("select wind_kph, wind_degrees, temp_c, relative_humidity, pressure_mb, precip_1m_metric  from observation "
                         "where station_id=%s and observation_time_unix>unix_timestamp()-%s", (station_id, delta))
@@ -207,7 +216,7 @@ def update_station(section_name):
             else:
                 avgrain = None
 
-            print "for %s wind samples %d (%s), wind_dir samples %d (%s)" % (column, cnt, out, cntd, at)
+            print "[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples)
 
             upd = "replace into averages ( station_id, period, pressure_mb, relative_humidity, temp_c, wind_kph, wind_degrees, precip_1m_metric) values (%s,%s,%s,%s,%s,%s,%s,%s)"
             cur.execute(upd, (station_id, delta, avgpress, avghu, tavg, out, at, avgrain))
@@ -215,15 +224,44 @@ def update_station(section_name):
         # garbage collector
         cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
 
-    except (MySQLdb.Error, requests.HTTPError, ElementTree.ParseError) as e:
-        import traceback
+    except (MySQLdb.Error, requests.HTTPError, ElementTree.ParseError, IndexError) as e:
         traceback.print_exc()
 
     finally:
         if con:
             con.close()
 
-    print
+
+def do_station(section_name):
+
+    matchx = sectionRe.match(section_name)
+    station_name = matchx.group(1)
+    update_if = config.get(section_name, "update-if")
+    print "[%s] start scheduler if condition [%s] " % (station_name,update_if)
+
+    now = datetime.datetime.now()
+    lastsecond = now.second
+
+    # wait second
+    while True:
+
+        # attende sync
+        while now.second == lastsecond:
+            time.sleep(0.1)
+            now = datetime.datetime.now()
+        lastsecond = now.second
+
+        if os.path.isfile("/tmp/killgrabber"):
+            print "[%s] exiting" % station_name
+            return
+
+        try:
+            if eval(update_if):
+                print "[%s] - time match (%s)" % (station_name, now)
+                update_station(section_name)
+        #except (AttributeError, NameError) as e:
+        except:
+            traceback.print_exc()
 
 
 if __name__ == "__main__":
@@ -256,10 +294,22 @@ if __name__ == "__main__":
 
     sectionRe = re.compile("station +(.+)")
 
-    priority = 0
+    ns = 0
+    param = []
+    priorities = {}
     for section in config.sections():
         match = sectionRe.match(section)
         if match:
-            station_name = match.group(1)
-            update_station(section)
-            priority += 1
+            param.append(section)
+            priorities[section] = ns
+            ns += 1
+
+    pool = ThreadPoll(ns)
+    pool.map(do_station, param)
+    pool.close()
+    pool.join()
+
+    if os.path.exists("/tmp/killgrabber"):
+        os.remove("/tmp/killgrabber")
+
+
