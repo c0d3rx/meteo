@@ -232,36 +232,20 @@ def update_station(section_name):
             con.close()
 
 
-def do_station(section_name):
+def check_station(section_name, now):
 
     matchx = sectionRe.match(section_name)
     station_name = matchx.group(1)
     update_if = config.get(section_name, "update-if")
-    print "[%s] start scheduler if condition [%s] " % (station_name,update_if)
-
-    now = datetime.datetime.now()
-    lastsecond = now.second
-
-    # wait second
-    while True:
-
-        # attende sync
-        while now.second == lastsecond:
-            time.sleep(0.1)
-            now = datetime.datetime.now()
-        lastsecond = now.second
-
-        if os.path.isfile("/tmp/killgrabber"):
-            print "[%s] exiting" % station_name
-            return
-
-        try:
-            if eval(update_if):
-                print "[%s] - time match (%s)" % (station_name, now)
-                update_station(section_name)
-        #except (AttributeError, NameError) as e:
-        except:
-            traceback.print_exc()
+    try:
+        to_update = eval(update_if)
+        if to_update:
+            print "[%s] has to beeen updated [%s] (%s) " % (station_name, update_if, now)
+        return to_update
+    # except (AttributeError, NameError) as e:
+    except:
+        traceback.print_exc()
+    return False
 
 
 if __name__ == "__main__":
@@ -295,17 +279,39 @@ if __name__ == "__main__":
     sectionRe = re.compile("station +(.+)")
 
     ns = 0
-    param = []
+    pool = ThreadPoll(4)
     priorities = {}
+    stations = []
     for section in config.sections():
         match = sectionRe.match(section)
         if match:
-            param.append(section)
+            stations.append(section)
+            # param.append(section)
             priorities[section] = ns
             ns += 1
 
-    pool = ThreadPoll(ns)
-    pool.map(do_station, param)
+    now = datetime.datetime.now()
+    lastsecond = now.second
+
+    # wait second
+    while True:
+        # attende sync
+        while now.second == lastsecond:
+            time.sleep(0.1)
+            now = datetime.datetime.now()
+        lastsecond = now.second
+        # check out condition
+        if os.path.isfile("/tmp/killgrabber"):
+            print "exiting"
+            break
+        # check station to be updated
+        param = []
+        for station in stations:
+            if check_station(station, now):
+                param.append(station)
+        if len(param) > 0:
+            pool.map_async(update_station, param)
+
     pool.close()
     pool.join()
 
