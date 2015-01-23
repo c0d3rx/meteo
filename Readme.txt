@@ -75,6 +75,11 @@ flush privileges;
 
 # useful queries
 
+
+# query alarm
+select station.id,station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null and station.id in ('LUMEZZANE','PINETA_SACCHETTI') and averages.period BETWEEN 120 AND 300  order by station.priority asc, averages.period asc limit 2;
+
+
 set @station='LUMEZZANE';
 select * from observation where station_id=@station and observation_time_unix > unix_timestamp() - 3600 order by observation_time_unix limit 100;
 
@@ -86,6 +91,12 @@ select station.label, averages.period,averages.wind_kph,averages.wind_degrees, a
 # specific station
 select station.id,station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null and station.id=@station order by station.priority asc, averages.period asc limit 1;
 
-# query alarm
-select station.id,station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null and station.id in ('LUMEZZANE','PINETA_SACCHETTI') and averages.period BETWEEN 120 AND 300  order by station.priority asc, averages.period asc limit 2;
 
+# max wind
+select from_unixtime(observation_time_unix),station_id,wind_kph from observation  where station_id=@station and observation_time_unix> unix_timestamp()-3600  order by wind_kph desc limit 1;
+
+# 10 min max wind
+select from_unixtime(observation_time_unix),station_id,wind_kph from observation  where station_id=@station and observation_time_unix> unix_timestamp()-600  order by wind_kph desc limit 1;
+
+# gust
+select from_unixtime(observation_time_unix),station_id,wind_kph,wind_gust_kph from observation  where station_id=@station and observation_time_unix> unix_timestamp()-3600  order by wind_gust_kph desc limit 1;
