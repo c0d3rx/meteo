@@ -34,7 +34,7 @@ def query(q):
 
 class Alarm:
     IDLE = 0
-    ALARM = 1
+    ARMED = 1
 
     def __init__(self, station, field, lo, lo_min, lo_period, lo_cmd, hi, hi_min, hi_period, hi_cmd, scale=1):
         self.station = station
@@ -53,11 +53,11 @@ class Alarm:
 
     def state_machine(self):
 
+        print "[%s] state_machine, state is %s, counter is %d" % (self.field, self.state, self.counter)
         if self.counter > 0:
             self.counter -= 1
             return
 
-        print "[%s] state_machine, state is %s" % (self.field, self.state)
         if self.state == Alarm.IDLE:
             #
             q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
@@ -69,14 +69,14 @@ class Alarm:
             value = rt[0] * self.scale
             print "[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.field, rt,value,self.hi)
             if value >= self.hi:
-                self.state = Alarm.ALARM
+                self.state = Alarm.ARMED
                 self.counter = self.hi_min
                 try:
                     os.system("%s %f" % (self.hi_cmd, value))
                 except:
                     traceback.print_exc()
 
-        elif self.state == Alarm.ALARM:
+        elif self.state == Alarm.ARMED:
             q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
                 % (self.field, self.station, self.field, self.lo_period[0], self.lo_period[1])
             rt = query(q)
@@ -169,4 +169,5 @@ if __name__ == "__main__":
         if ut % period_step == 0:
             for alarm in alarms:
                 alarm.state_machine()
-        time.sleep(.5)
+            time.sleep(1.2)
+        time.sleep(.2)
