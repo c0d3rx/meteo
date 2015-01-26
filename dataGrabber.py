@@ -42,7 +42,6 @@ ch.setFormatter(formatter)
 log.addHandler(ch)
 
 
-
 def usage():
     print "Usage : %s [-c,--config=<configuration file>] [-h,--help]" % (sys.argv[0])
     sys.exit(1)
