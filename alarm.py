@@ -7,11 +7,36 @@ import time
 import MySQLdb
 import traceback
 import os
+import logging
+import logging.handlers
+
+
+logDir = os.environ['HOME'] + "/logs"
+if os.path.exists(logDir):
+    if not os.path.isdir(logDir):
+        print "logDir [%s] must be a directory" % logDir
+        sys.exit(1)
+else:
+    os.mkdir(logDir)
+    print "logDir [%s] created" % logDir
+
+formatter = logging.Formatter(fmt='%(asctime)s - %(levelname)s - %(message)s')
+logName = logDir+"/meteoalarm.log"
+log = logging.getLogger("meteoalarm")
+log.setLevel(logging.DEBUG)
+fh = logging.handlers.TimedRotatingFileHandler(filename=logName, when="midnight", interval=1, backupCount=5)
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+log.addHandler(fh)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+ch.setFormatter(formatter)
+log.addHandler(ch)
 
 
 def query(q):
-
-    print q
+    log.debug("query [%s]" % q)
     rt = None
     con = None
 
@@ -23,7 +48,7 @@ def query(q):
 
         cur.execute(q)
         rt = cur.fetchone()
-    except ( MySQLdb.Error ) as e:
+    except MySQLdb.Error as e:
         traceback.print_exc()
     finally:
         if con is not None:
@@ -53,7 +78,7 @@ class Alarm:
 
     def state_machine(self):
 
-        print "[%s] state_machine, state is %s, counter is %d" % (self.field, self.state, self.counter)
+        log.debug ("[%s] state_machine, state is %s, counter is %d" % (self.field, self.state, self.counter))
         if self.counter > 0:
             self.counter -= 1
             return
@@ -64,35 +89,35 @@ class Alarm:
                 % (self.field, self.station, self.field, self.hi_period[0], self.hi_period[1])
             rt = query(q)
             if rt is None:
-                print "[%s] state_machine: No value" % (self.field)
+                log.warning("[%s] state_machine: No value" % (self.field))
                 return
             value = rt[0] * self.scale
-            print "[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.field, rt,value,self.hi)
+            log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.field, rt, value, self.hi))
             if value >= self.hi:
                 self.state = Alarm.ARMED
                 self.counter = self.hi_min
                 try:
                     os.system("%s %f" % (self.hi_cmd, value))
                 except:
-                    traceback.print_exc()
+                    log.exception("")
 
         elif self.state == Alarm.ARMED:
             q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
                 % (self.field, self.station, self.field, self.lo_period[0], self.lo_period[1])
             rt = query(q)
             if rt is None:
-                print "[%s] state_machine: No value" % (self.field)
+                log.warning("[%s] state_machine: No value" % (self.field))
                 return
 
             value = rt[0] * self.scale
-            print "[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.field, rt,value,self.lo)
+            log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.field, rt, value, self.lo))
             if value < self.lo:
                 self.state = Alarm.IDLE
                 self.counter = self.lo_min
                 try:
                     os.system("%s %f" % (self.lo_cmd, value))
                 except:
-                    traceback.print_exc()
+                    log.exception("")
         else:
             pass
 
@@ -123,6 +148,7 @@ if __name__ == "__main__":
 
     # read and parse config file
 
+    log.info("Started!")
     config = ConfigParser.SafeConfigParser()
     config.read(configFile)
 

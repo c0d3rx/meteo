@@ -13,8 +13,34 @@ import pytz
 import traceback
 from multiprocessing.dummy import Pool as ThreadPoll
 import os
+import logging
+import logging.handlers
 
 configFile = "wind.ini"
+
+logDir = os.environ['HOME'] + "/logs"
+if os.path.exists(logDir):
+    if not os.path.isdir(logDir):
+        print "logDir [%s] must be a directory" % logDir
+        sys.exit(1)
+else:
+    os.mkdir(logDir)
+    print "logDir [%s] created" % logDir
+
+formatter = logging.Formatter(fmt='%(asctime)s - %(levelname)s - %(message)s')
+logName = logDir+"/meteograbber.log"
+log = logging.getLogger("meteograbber")
+log.setLevel(logging.DEBUG)
+fh = logging.handlers.TimedRotatingFileHandler(filename=logName, when="midnight", interval=1, backupCount=5)
+fh.setLevel(logging.DEBUG)
+fh.setFormatter(formatter)
+log.addHandler(fh)
+
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+ch.setFormatter(formatter)
+log.addHandler(ch)
+
 
 
 def usage():
@@ -29,7 +55,7 @@ def update_station(section_name):
     station_type = config.get(section_name, "type")
     # priority = config.get(section_name, "priority")
     priority = priorities[section_name]
-    print "[%s] start updating ( priority is %s)" % (station_name, priority)
+    log.debug("[%s] start updating ( priority is %s)" % (station_name, priority))
 
     # print station_url
     con = None
@@ -45,7 +71,7 @@ def update_station(section_name):
 
             ut = email_utils.mktime_tz(email_utils.parsedate_tz(observation_time_rfc822))
 
-            print "[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S"))
+            log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
 
             station_id = tree.find("station_id").text
             temp_c = tree.find("temp_c").text
@@ -92,7 +118,7 @@ def update_station(section_name):
                                    int(record[29]), int(record[30]), int(record[31]), tzinfo=loc_dt)
             ut = time.mktime(dt.timetuple())
 
-            print "[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S"))
+            log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
             temp_c = float(record[4])
             relative_humidity = float(record[5])
             wind_degrees = float(record[3])
@@ -216,7 +242,7 @@ def update_station(section_name):
             else:
                 avgrain = None
 
-            print "[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples)
+            log.debug("[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples))
 
             upd = "replace into averages ( station_id, period, pressure_mb, relative_humidity, temp_c, wind_kph, wind_degrees, precip_1m_metric) values (%s,%s,%s,%s,%s,%s,%s,%s)"
             cur.execute(upd, (station_id, delta, avgpress, avghu, tavg, out, at, avgrain))
@@ -225,7 +251,7 @@ def update_station(section_name):
         cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
 
     except (MySQLdb.Error, requests.HTTPError, ElementTree.ParseError, IndexError) as e:
-        traceback.print_exc()
+        log.exception("")
 
     finally:
         if con:
@@ -240,11 +266,12 @@ def check_station(section_name, now):
     try:
         to_update = eval(update_if)
         if to_update:
-            print "[%s] has to beeen updated [%s] (%s) " % (station_name, update_if, now)
+            log.info("[%s] has to beeen updated [%s] (%s) " % (station_name, update_if, now))
         return to_update
     # except (AttributeError, NameError) as e:
     except:
-        traceback.print_exc()
+        log.exception("")
+
     return False
 
 
@@ -267,6 +294,8 @@ if __name__ == "__main__":
             configFile = a
 
     # read and parse config file
+
+    log.info("started!")
 
     config = ConfigParser.SafeConfigParser()
     config.read(configFile)
@@ -317,5 +346,6 @@ if __name__ == "__main__":
 
     if os.path.exists("/tmp/killgrabber"):
         os.remove("/tmp/killgrabber")
+        log.info("stopped by file ")
 
 
