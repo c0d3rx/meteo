@@ -176,7 +176,11 @@ if __name__ == "__main__":
             label = match.group(1)
 
             field = config.get(section, "field")
-            initial_state = config.getboolean(section, "initial_state")
+
+            try:
+                initial_state = config.getboolean(section, "initial_state")
+            except ConfigParser.NoOptionError:
+                initial_state = False
 
             lo = config.getfloat(section, "lo")             # end alarm value
             lo_min = config.getint(section, "lo_min")       # min value in no alarm state
