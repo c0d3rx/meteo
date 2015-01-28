@@ -61,8 +61,9 @@ class Alarm:
     IDLE = 0
     ARMED = 1
 
-    def __init__(self, station, field, lo, lo_min, lo_period, lo_cmd, hi, hi_min, hi_period, hi_cmd, scale=1):
+    def __init__(self, station, label, field, lo, lo_min, lo_period, lo_cmd, hi, hi_min, hi_period, hi_cmd, scale=1):
         self.station = station
+        self.label = label
         self.field = field
         self.lo = lo
         self.lo_min = lo_min
@@ -78,7 +79,7 @@ class Alarm:
 
     def state_machine(self):
 
-        log.debug ("[%s] state_machine, state is %s, counter is %d" % (self.field, self.state, self.counter))
+        log.debug("[%s] state_machine, state is %s, counter is %d" % (self.label, self.state, self.counter))
         if self.counter > 0:
             self.counter -= 1
             return
@@ -89,41 +90,41 @@ class Alarm:
                 % (self.field, self.station, self.field, self.hi_period[0], self.hi_period[1])
             rt = query(q)
             if rt is None:
-                log.warning("[%s] state_machine: No value" % (self.field))
+                log.warning("[%s] state_machine: No value" % (self.label))
                 return
             value = rt[0] * self.scale
-            log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.field, rt, value, self.hi))
+            log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.label, rt, value, self.hi))
             if value >= self.hi:
                 self.state = Alarm.ARMED
                 self.counter = self.hi_min
                 try:
                     os.system("%s %f" % (self.hi_cmd, value))
                 except:
-                    log.exception("")
+                    log.exception(self.label)
 
         elif self.state == Alarm.ARMED:
             q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
                 % (self.field, self.station, self.field, self.lo_period[0], self.lo_period[1])
             rt = query(q)
             if rt is None:
-                log.warning("[%s] state_machine: No value" % (self.field))
+                log.warning("[%s] state_machine: No value" % (self.label))
                 return
 
             value = rt[0] * self.scale
-            log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.field, rt, value, self.lo))
+            log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.label, rt, value, self.lo))
             if value < self.lo:
                 self.state = Alarm.IDLE
                 self.counter = self.lo_min
                 try:
                     os.system("%s %f" % (self.lo_cmd, value))
                 except:
-                    log.exception("")
+                    log.exception(self.label)
         else:
             pass
 
 
 def usage():
-    print "Usage : %s [-c,--config=<configuration file>] [-h,--help]" % (sys.argv[0])
+    print "Usage : %s [-c,--config=<configuration file>] [-h,--help] [--initial-state=<alarm name:True|False>]" % (sys.argv[0])
     sys.exit(1)
 
 if __name__ == "__main__":
@@ -131,13 +132,14 @@ if __name__ == "__main__":
     configFile = "alarm.ini"
     period_step = 10    # period step in seconds
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hc:", ["help", "config="])
+        opts, args = getopt.getopt(sys.argv[1:], "hc:", ["help", "config=", "initial-state="])
     except getopt.GetoptError:
         print "Error parsing argument:", sys.exc_info()[1]
         # print help information and exit:
         usage()
         sys.exit(2)
 
+    initial_states = {}
     for o, a in opts:
         if o in ("-h", "--help"):
             usage()
@@ -145,6 +147,12 @@ if __name__ == "__main__":
 
         if o in ("-c", "--config"):
             configFile = a
+        if o == "--initial-state":
+            alarm_name, initial_state = a.split(":")
+            initial_state = bool(initial_state)
+            log.info("alarm [%s] initial state is [%s]" % (alarm_name, initial_state))
+            if initial_state:
+                initial_states[alarm_name] = initial_state
 
     # read and parse config file
 
@@ -165,7 +173,10 @@ if __name__ == "__main__":
         match = sectionRe.match(section)
         if match:
             station = config.get(section, "station")
-            field = match.group(1)
+            label = match.group(1)
+
+            field = config.get(section, "field")
+            initial_state = config.getboolean(section, "initial_state")
 
             lo = config.getfloat(section, "lo")             # end alarm value
             lo_min = config.getint(section, "lo_min")       # min value in no alarm state
@@ -184,7 +195,12 @@ if __name__ == "__main__":
             except ConfigParser.NoOptionError:
                 scale = 1.0
 
-            alarm = Alarm(station, field, lo, lo_min, lo_period, lo_cmd, hi, hi_min, hi_period, hi_cmd, scale=scale)
+            alarm = Alarm(station, label, field, lo, lo_min, lo_period, lo_cmd, hi, hi_min, hi_period, hi_cmd, scale=scale)
+            if label in initial_states or initial_state:
+                log.info("Alarm [%s] will be armed !" % (label))
+                alarm.state = Alarm.ARMED
+                alarm.counter = hi_min
+
             alarms.append(alarm)
             # param.append(section)
             na += 1
