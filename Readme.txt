@@ -1,3 +1,4 @@
+https://help.github.com/articles/fork-a-repo/
 
 git config  user.email "user@domain"
 git config user.email
