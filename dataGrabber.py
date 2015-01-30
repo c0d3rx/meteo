@@ -59,90 +59,87 @@ def update_station(section_name):
     # print station_url
     con = None
     try:
+        station_id = config.get(section_name, "id")
+        try:
+            if station_type in ("Weather Underground", "WU"):
 
-        if station_type in ("Weather Underground", "WU"):
-            response = requests.get(station_url, timeout=8)
+                response = requests.get(station_url, timeout=8)
+                tree = ElementTree.fromstring(response.content)
+                observation_time_rfc822 = tree.find("observation_time_rfc822").text
+                observation_time_unparsed = observation_time_rfc822
+                ut = email_utils.mktime_tz(email_utils.parsedate_tz(observation_time_rfc822))
+                log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
+                temp_c = tree.find("temp_c").text
+                relative_humidity = tree.find("relative_humidity").text
+                if relative_humidity.endswith("%"):
+                    relative_humidity = relative_humidity[:-1]
 
-            tree = ElementTree.fromstring(response.content)
+                wind_degrees = tree.find("wind_degrees").text
+                if float(wind_degrees) < 0:
+                    wind_degrees = None
 
-            observation_time_rfc822 = tree.find("observation_time_rfc822").text
-            observation_time_unparsed = observation_time_rfc822
-
-            ut = email_utils.mktime_tz(email_utils.parsedate_tz(observation_time_rfc822))
-
-            log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
-
-            station_id = tree.find("station_id").text
-            temp_c = tree.find("temp_c").text
-            relative_humidity = tree.find("relative_humidity").text
-            if relative_humidity.endswith("%"):
-                relative_humidity = relative_humidity[:-1]
-
-            wind_degrees = tree.find("wind_degrees").text
-            if float(wind_degrees) < 0:
-                wind_degrees = None
-
-            wind_mph = tree.find("wind_mph").text
-            if float(wind_mph) >= 0:
-                wind_kph = float(wind_mph)*1.609344
-            else:
-                wind_kph = None
-
-            wind_gust_mph = tree.find("wind_gust_mph").text
-            if float(wind_gust_mph) >= 0:
-                wind_gust_kph = float(wind_gust_mph)*1.609344
-            else:
-                wind_gust_kph = None
-
-            precip_1m_metric = tree.find("precip_1hr_metric").text
-            if precip_1m_metric is not None:
-                if float(precip_1m_metric) >= 0:
-                    precip_1m_metric = float(precip_1m_metric)/60
+                wind_mph = tree.find("wind_mph").text
+                if float(wind_mph) >= 0:
+                    wind_kph = float(wind_mph)*1.609344
                 else:
-                    precip_1m_metric = None
+                    wind_kph = None
 
-            pressure_mb = tree.find("pressure_mb").text
-            solar_radiation = tree.find("solar_radiation").text
-        elif station_type in ("Weather Display", "WD"):
-            response = requests.get(station_url, timeout=8)
-            data = response.content
-            record = data.split(' ')
+                wind_gust_mph = tree.find("wind_gust_mph").text
+                if float(wind_gust_mph) >= 0:
+                    wind_gust_kph = float(wind_gust_mph)*1.609344
+                else:
+                    wind_gust_kph = None
 
-            station_id = config.get(section_name, "id")
-            station_timezone = config.get(section_name, "timezone")
+                precip_1m_metric = tree.find("precip_1hr_metric").text
+                if precip_1m_metric is not None:
+                    if float(precip_1m_metric) >= 0:
+                        precip_1m_metric = float(precip_1m_metric)/60
+                    else:
+                        precip_1m_metric = None
 
-            observation_time_unparsed = record[141]+"/"+record[36]+"/"+record[35]+" - "+record[29]+":"+record[30]+":"+record[31]
-            loc_dt = pytz.timezone(station_timezone)
-            dt = datetime.datetime(int(record[141]), int(record[36]), int(record[35]),
-                                   int(record[29]), int(record[30]), int(record[31]), tzinfo=loc_dt)
-            ut = time.mktime(dt.timetuple())
+                pressure_mb = tree.find("pressure_mb").text
+                solar_radiation = tree.find("solar_radiation").text
+            elif station_type in ("Weather Display", "WD"):
+                response = requests.get(station_url, timeout=8)
+                data = response.content
+                record = data.split(' ')
 
-            log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
-            temp_c = float(record[4])
-            relative_humidity = float(record[5])
-            wind_degrees = float(record[3])
-            wind_kph = float(record[2])*1.852
-            wind_gust_kph = float(record[133])*1.852
-            pressure_mb = float(record[6])
-            solar_radiation = float(record[127])
-            precip_1m_metric = float(record[10])
+                station_timezone = config.get(section_name, "timezone")
 
-        else:
-            raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
+                observation_time_unparsed = record[141]+"/"+record[36]+"/"+record[35]+" - "+record[29]+":"+record[30]+":"+record[31]
+                loc_dt = pytz.timezone(station_timezone)
+                dt = datetime.datetime(int(record[141]), int(record[36]), int(record[35]),
+                                       int(record[29]), int(record[30]), int(record[31]), tzinfo=loc_dt)
+                ut = time.mktime(dt.timetuple())
 
-        # print "precipit %s" % precip_1m_metric
-        con = MySQLdb.connect(dbhost, dbuser, dbpasswd, dbname)
-        # cur = con.cursor(MySQLdb.cursors.DictCursor)
-        cur = con.cursor()
-        cur.execute("replace into station (id,label,priority) values (%s,%s,%s)", (station_id, station_name, priority))
+                log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
+                temp_c = float(record[4])
+                relative_humidity = float(record[5])
+                wind_degrees = float(record[3])
+                wind_kph = float(record[2])*1.852
+                wind_gust_kph = float(record[133])*1.852
+                pressure_mb = float(record[6])
+                solar_radiation = float(record[127])
+                precip_1m_metric = float(record[10])
 
-        cur.execute("select observation_time_unix from observation where observation_time_unix=%s and station_id='%s'" % (ut, station_id))
-        observation = cur.fetchone()
-        if observation is None:
-            cur.execute("insert into observation "
-                        "(observation_time_unix,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,precip_1m_metric,solar_radiation) "
-                        "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (ut, observation_time_unparsed, station_id,temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, solar_radiation))
+            else:
+                raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
+
+            # print "precipit %s" % precip_1m_metric
+            con = MySQLdb.connect(dbhost, dbuser, dbpasswd, dbname)
+            # cur = con.cursor(MySQLdb.cursors.DictCursor)
+            cur = con.cursor()
+            cur.execute("replace into station (id,label,priority) values (%s,%s,%s)", (station_id, station_name, priority))
+
+            cur.execute("select observation_time_unix from observation where observation_time_unix=%s and station_id='%s'" % (ut, station_id))
+            observation = cur.fetchone()
+            if observation is None:
+                cur.execute("insert into observation "
+                            "(observation_time_unix,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,precip_1m_metric,solar_radiation) "
+                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (ut, observation_time_unparsed, station_id,temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, solar_radiation))
+        except:
+            log.exception("Fetching/updating [%s]" % station_id)
 
         # compute avg values for wind / wind prevalent direction
         exec ("ct= %s" % config.get(section_name,"averages"))
