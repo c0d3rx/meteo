@@ -1,6 +1,7 @@
 
 git config  user.email "user@domain"
 git config user.email
+git branch --set-upstream master origin/master
 git push origin master
 
 # Pre-requisites: sudo apt-get install python-mysqldb
