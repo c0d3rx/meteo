@@ -80,19 +80,42 @@ class Alarm:
     def state_machine(self):
 
         log.debug("[%s] state_machine, state is %s, counter is %d" % (self.label, self.state, self.counter))
+
         if self.counter > 0:
             self.counter -= 1
+
+        # determine query to do
+
+        qx = 0
+        if self.state == Alarm.IDLE:
+            if self.counter == 0:
+                qx = 1
+        elif self.state == Alarm.ARMED:
+            if self.counter > 0:
+                qx = 1
+            else:
+                qx = 2
+        if qx == 0:
             return
+
+        if qx == 1:
+            q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
+                % (self.field, self.station, self.field, self.hi_period[0], self.hi_period[1])
+        elif qx == 2:
+            q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
+                % (self.field, self.station, self.field, self.lo_period[0], self.lo_period[1])
+        else:
+            return
+
+        rt = query(q)
+        if rt is None:
+            log.warning("[%s] state_machine: No value" % (self.label))
+            return
+        value = rt[0] * self.scale
+        log.debug("[%s] state_machine, qx [%s], value %s" % (self.label, qx, value))
 
         if self.state == Alarm.IDLE:
             #
-            q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
-                % (self.field, self.station, self.field, self.hi_period[0], self.hi_period[1])
-            rt = query(q)
-            if rt is None:
-                log.warning("[%s] state_machine: No value" % (self.label))
-                return
-            value = rt[0] * self.scale
             log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.label, rt, value, self.hi))
             if value >= self.hi:
                 self.state = Alarm.ARMED
@@ -103,22 +126,19 @@ class Alarm:
                     log.exception(self.label)
 
         elif self.state == Alarm.ARMED:
-            q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
-                % (self.field, self.station, self.field, self.lo_period[0], self.lo_period[1])
-            rt = query(q)
-            if rt is None:
-                log.warning("[%s] state_machine: No value" % (self.label))
-                return
-
-            value = rt[0] * self.scale
-            log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.label, rt, value, self.lo))
-            if value < self.lo:
-                self.state = Alarm.IDLE
-                self.counter = self.lo_min
-                try:
-                    os.system("%s %f" % (self.lo_cmd, value))
-                except:
-                    log.exception(self.label)
+            if self.counter == 0:
+                log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.label, rt, value, self.lo))
+                if value < self.lo:
+                    self.state = Alarm.IDLE
+                    self.counter = self.lo_min
+                    try:
+                        os.system("%s %f" % (self.lo_cmd, value))
+                    except:
+                        log.exception(self.label)
+            else:
+                if value >= self.hi:
+                    # extend alarm
+                    self.counter = self.hi_min
         else:
             pass
 
