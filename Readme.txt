@@ -35,7 +35,6 @@ CREATE TABLE observation (
   wind_kph DOUBLE,
   wind_gust_kph DOUBLE,
   pressure_mb DOUBLE,
-  pressure_mb DOUBLE,
   precip_1m_metric DOUBLE,      /* precipitation in mm per min */
   solar_radiation DOUBLE
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;

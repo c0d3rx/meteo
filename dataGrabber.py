@@ -71,8 +71,9 @@ def update_station(section_name):
                 log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
                 temp_c = tree.find("temp_c").text
                 relative_humidity = tree.find("relative_humidity").text
-                if relative_humidity.endswith("%"):
-                    relative_humidity = relative_humidity[:-1]
+                if relative_humidity is not None:
+                    if relative_humidity.endswith("%"):
+                        relative_humidity = relative_humidity[:-1]
 
                 wind_degrees = tree.find("wind_degrees").text
                 if float(wind_degrees) < 0:
@@ -85,10 +86,12 @@ def update_station(section_name):
                     wind_kph = None
 
                 wind_gust_mph = tree.find("wind_gust_mph").text
-                if float(wind_gust_mph) >= 0:
-                    wind_gust_kph = float(wind_gust_mph)*1.609344
-                else:
-                    wind_gust_kph = None
+                wind_gust_kph = None
+                if wind_gust_mph is not None:
+                    if float(wind_gust_mph) >= 0:
+                        wind_gust_kph = float(wind_gust_mph)*1.609344
+                    else:
+                        wind_gust_kph = None
 
                 precip_1m_metric = tree.find("precip_1hr_metric").text
                 if precip_1m_metric is not None:
@@ -310,6 +313,9 @@ if __name__ == "__main__":
     for section in config.sections():
         match = sectionRe.match(section)
         if match:
+            if config.has_option(section, "enabled") and not config.getboolean(section, "enabled"):
+                continue
+            log.info("Added station %s" % section)
             stations.append(section)
             # param.append(section)
             priorities[section] = ns
