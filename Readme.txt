@@ -111,3 +111,8 @@ select from_unixtime(observation_time_unix),station_id,wind_kph,wind_gust_kph fr
 
 # kobo
 select station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null order by averages.period asc,station.priority asc, averages.period asc limit 1;
+
+
+db purge script
+
+0 0 * * * mysql --user=observations -pobservations --host=localhost observations -e "delete from observation where observation_time_unix<unix_timestamp()-(3600*24*2);" > $HOME/logs/purgedbo.log 2>&1

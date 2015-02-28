@@ -247,7 +247,7 @@ def update_station(section_name):
             cur.execute(upd, (station_id, delta, avgpress, avghu, tavg, out, at, avgrain))
 
         # garbage collector
-        cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
+        # cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
 
     except (MySQLdb.Error, requests.HTTPError, ElementTree.ParseError, IndexError) as e:
         log.exception("")
