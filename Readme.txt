@@ -1,5 +1,8 @@
 https://help.github.com/articles/fork-a-repo/
 
+insert user name in repo ex:
+https://c0d3rx@github.com/c0d3rx/meteo
+
 git config  user.email "user@domain"
 git config user.email
 git branch --set-upstream master origin/master
