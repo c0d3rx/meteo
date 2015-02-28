@@ -1,7 +1,9 @@
 https://help.github.com/articles/fork-a-repo/
 
+to commit in pycharm
 insert user name in repo ex:
 https://c0d3rx@github.com/c0d3rx/meteo
+or in .git/config
 
 
 git config  user.email "user@domain"
