@@ -84,63 +84,71 @@ class Alarm:
         if self.counter > 0:
             self.counter -= 1
 
-        # determine query to do
+        # determine query(es) to do
 
         qx = 0
         if self.state == Alarm.IDLE:
             if self.counter == 0:
                 qx = 1
-        elif self.state == Alarm.ARMED:
-            if self.counter > 0:
-                qx = 1
             else:
-                qx = 2
-        if qx == 0:
-            return
-
-        if qx == 1:
-            q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
-                % (self.field, self.station, self.field, self.hi_period[0], self.hi_period[1])
-        elif qx == 2:
-            q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
-                % (self.field, self.station, self.field, self.lo_period[0], self.lo_period[1])
+                return
+        elif self.state == Alarm.ARMED:
+            if self.counter == 0:
+                qx = 3      # query for extend and stop
+            else:
+                qx = 1      # query for extend only
         else:
             return
 
-        rt = query(q)
-        if rt is None:
-            log.warning("[%s] state_machine: No value" % (self.label))
-            return
-        value = rt[0] * self.scale
-        log.debug("[%s] state_machine, qx [%s], value %s" % (self.label, qx, value))
+        # low to high
+        if qx & 1:
+            q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
+                % (self.field, self.station, self.field, self.hi_period[0], self.hi_period[1])
+            rt = query(q)
+            if rt is None:
+                log.warning("[%s] state_machine: No value" % (self.label))
+                return
+            value_to_high = rt[0] * self.scale
+            log.debug("[%s] state_machine, query result [%s] value_to_high [%s]" % (self.label, rt, value_to_high))
+
+        # high to low
+        if qx & 2:
+            q = "select %s as field_value, station_id, period from averages,station where averages.station_id=station.id and station_id in (%s) and %s is not null and averages.period BETWEEN %s AND %s  order by station.priority asc, averages.period asc limit 1" \
+                % (self.field, self.station, self.field, self.lo_period[0], self.lo_period[1])
+            rt = query(q)
+            if rt is None:
+                log.warning("[%s] state_machine: No value" % (self.label))
+                return
+            value_to_low = rt[0] * self.scale
+            log.debug("[%s] state_machine, query result [%s], value_to_low %s" % (self.label, rt, value_to_low))
 
         if self.state == Alarm.IDLE:
             #
-            log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.label, rt, value, self.hi))
-            if value >= self.hi:
+            log.debug("[%s] state_machine: value is [%f] (trigger is %f)" % (self.label, value_to_high, self.hi))
+            if value_to_high >= self.hi:
+                log.info("[%s] state_machine: starting alarm: value is [%f] (trigger is %f)" % (self.label, value_to_high, self.hi))
                 self.state = Alarm.ARMED
                 self.counter = self.hi_min
                 try:
-                    os.system("%s %f" % (self.hi_cmd, value))
+                    os.system("%s %f" % (self.hi_cmd, value_to_high))
                 except:
                     log.exception(self.label)
 
         elif self.state == Alarm.ARMED:
-            if self.counter == 0:
-                log.debug("[%s] state_machine: value [%s] [%f] [trigger is %f]" % (self.label, rt, value, self.lo))
-                if value < self.lo:
-                    self.state = Alarm.IDLE
-                    self.counter = self.lo_min
-                    try:
-                        os.system("%s %f" % (self.lo_cmd, value))
-                    except:
-                        log.exception(self.label)
-            else:
-                if value >= self.hi:
-                    # extend alarm
-                    self.counter = self.hi_min
-        else:
-            pass
+            # extendig alarm ?
+            if value_to_high >= self.hi:
+                # extend alarm time
+                self.counter = self.hi_min
+                log.info("[%s] state_machine: extending alarm: value is [%f] (trigger is %f)" % (self.label, value_to_high, self.hi))
+                return
+            if self.counter == 0 and value_to_low < self.lo:
+                log.info("[%s] state_machine: ending alarm: value is [%f] (trigger is %f)" % (self.label, value_to_low, self.lo))
+                self.state = Alarm.IDLE
+                self.counter = self.lo_min
+                try:
+                    os.system("%s %f" % (self.lo_cmd, value_to_low))
+                except:
+                    log.exception(self.label)
 
 
 def usage():
