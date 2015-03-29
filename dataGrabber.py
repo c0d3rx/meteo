@@ -114,6 +114,7 @@ def update_station(section_name):
                 dt = datetime.datetime(int(record[141]), int(record[36]), int(record[35]),
                                        int(record[29]), int(record[30]), int(record[31]), tzinfo=loc_dt)
                 ut = time.mktime(dt.timetuple())
+                ut -= pytz.utc.localize(datetime.datetime.utcnow()).astimezone(loc_dt).dst().seconds
 
                 log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
                 temp_c = float(record[4])
