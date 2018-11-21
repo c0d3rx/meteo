@@ -67,30 +67,48 @@ CREATE table station (
     id  varchar(32),
     label varchar(64),
     priority int,
+    precip_total_metric double,
+
+    min_temp double,
+    min_temp_absolute_time int unsigned,
+    min_temp_local_time DATETIME,
+
+    max_temp double,
+    max_temp_absolute_time int unsigned,
+    max_temp_local_time DATETIME,
+
     PRIMARY KEY (id)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 # added 21.11.28
-alter table station add precip_total_metric double after priority;
+#alter table station add precip_total_metric double after priority;
 
-alter table station add max_temp double after precip_total_metric;
-alter table station add max_temp_time int unsigned after max_temp;
+#alter table station add max_temp double after precip_total_metric;
+#alter table station add max_temp_absolute_time int unsigned after max_temp;
 
-alter table station add min_temp double after max_temp;
-alter table station add min_temp_time int unsigned after min_temp;
+#alter table station add min_temp double after max_temp;
+#alter table station add min_temp_absolute_time int unsigned after min_temp;
 
 
 
 # station daily statistics
+# day referred as local station day
+
 drop table if exists station_daily;
 CREATE table station_daily (
-    id_unix_time_day int unsigned NOT NULL,
+    station_id  varchar(32) NOT NULL,
+    id DATE NOT NULL,
     precip_total_metric double,
+
     min_temp double,
-    min_temp_time int unsigned,
+    min_temp_absolute_time int unsigned,
+    min_temp_local_time DATETIME,
+
     max_temp double,
-    max_temp_time int unsigned,
-    PRIMARY KEY (id_unix_time_day)
+    max_temp_absolute_time int unsigned,
+    max_temp_local_time DATETIME,
+
+    PRIMARY KEY (station_id,id)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
 #alter table station_daily add max_temp_time int unsigned after max_temp;

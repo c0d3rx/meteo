@@ -47,6 +47,54 @@ def usage():
     sys.exit(1)
 
 
+def do_update(cur, tbname, wherecond, f2upd):
+    sets=""
+    comma=""
+    for fname, fval in f2upd.iteritems():
+        sets += comma+fname+"="+str(fval)
+        comma = ", "
+    q = "update {} set {} {}".format(tbname, sets, wherecond)
+    log.debug ("do_update [%s]" % q)
+    cur.execute(q)
+
+
+def do_insert(cur, tbname, f2in):
+    values = ""
+    intos = ""
+    comma=""
+    for fname, fval in f2in.iteritems():
+        intos += comma+fname
+        values += comma+str(fval)
+        comma = ", "
+    q = "insert into {} ({}) values ({})".format(tbname, intos, values)
+    log.debug ("do_insert [%s]" % q)
+    cur.execute(q)
+
+
+
+def month_string_to_number(string):
+    m = {
+        'jan': 1,
+        'feb': 2,
+        'mar': 3,
+        'apr':4,
+         'may':5,
+         'jun':6,
+         'jul':7,
+         'aug':8,
+         'sep':9,
+         'oct':10,
+         'nov':11,
+         'dec':12
+        }
+    s = string.strip()[:3].lower()
+
+    try:
+        out = m[s]
+        return out
+    except:
+        raise ValueError('Not a month')
+
 def update_station(section_name):
     matchx = sectionRe.match(section_name)
     station_name = matchx.group(1)
@@ -61,14 +109,36 @@ def update_station(section_name):
     try:
         station_id = config.get(section_name, "id")
         try:
+            local_day=None
+            local_month=None
+            local_year = None
+            local_hour = None
+            local_minute = None
+            local_sec = None
             if station_type in ("Weather Underground", "WU"):
 
                 response = requests.get(station_url, timeout=8)
                 tree = ElementTree.fromstring(response.content)
                 observation_time_rfc822 = tree.find("observation_time_rfc822").text
-                observation_time_unparsed = observation_time_rfc822
+                observation_time_unparsed = tree.find("observation_time").text
+
                 ut = email_utils.mktime_tz(email_utils.parsedate_tz(observation_time_rfc822))
                 log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
+
+                # grab local time year, month and day
+                # "Last Updated on November 21, 10:52 AM CET"
+                m = re.match("Last Updated on ([^ ]+) ([\d]+), ([\d]+):([\d]+) (AM|PM) (.*)+", observation_time_unparsed)
+                if m is not None:
+                    local_month = month_string_to_number(m.group(1))
+                    local_day = int(m.group(2))
+    # year is missing, try to get from ut TODO: change year for different timezones
+                    local_year = datetime.datetime.fromtimestamp(ut).year
+                    local_hour = int(m.group(3))
+                    if m.group(5) == 'PM':
+                        local_hour += 12
+                    local_minute = int(m.group(4))
+                    local_sec = datetime.datetime.fromtimestamp(ut).second
+
                 temp_c = tree.find("temp_c").text
                 relative_humidity = tree.find("relative_humidity").text
                 if relative_humidity is not None:
@@ -93,15 +163,24 @@ def update_station(section_name):
                     else:
                         wind_gust_kph = None
 
-                precip_1m_metric = tree.find("precip_1hr_metric").text
-                if precip_1m_metric is not None:
-                    if float(precip_1m_metric) >= 0:
-                        precip_1m_metric = float(precip_1m_metric)/60
-                    else:
-                        precip_1m_metric = None
+                mval = tree.find ("precip_1hr_in").text
+                try:
+                    precip_1h_metric = float(mval) * 2.54
+                    precip_1m_metric = precip_1h_metric/60.
+                except (ValueError, TypeError):
+                    precip_1m_metric=None
+
 
                 pressure_mb = tree.find("pressure_mb").text
                 solar_radiation = tree.find("solar_radiation").text
+
+                mval = tree.find ("precip_today_in").text
+                try:
+                    precip_daily_total = float(mval) * 2.54
+                except (ValueError, TypeError):
+                    precip_daily_total=None
+
+
             elif station_type in ("Weather Display", "WD"):
                 response = requests.get(station_url, timeout=8)
                 data = response.content
@@ -110,6 +189,13 @@ def update_station(section_name):
                 station_timezone = config.get(section_name, "timezone")
 
                 observation_time_unparsed = record[141]+"/"+record[36]+"/"+record[35]+" - "+record[29]+":"+record[30]+":"+record[31]
+                local_year = int(record[141])
+                local_month = int(record[36])
+                local_day = int(record[35])
+                local_hour = int(record[29])
+                local_minute = int(record[30])
+                local_sec = int(record[31])
+
                 loc_dt = pytz.timezone(station_timezone)
                 dtx = datetime.datetime(int(record[141]), int(record[36]), int(record[35]),
                                         int(record[29]), int(record[30]), int(record[31]))
@@ -126,6 +212,7 @@ def update_station(section_name):
                 pressure_mb = float(record[6])
                 solar_radiation = float(record[127])
                 precip_1m_metric = float(record[10])
+                precip_daily_total = float(record[165])
 
             else:
                 raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
@@ -143,6 +230,50 @@ def update_station(section_name):
                             "(observation_time_unix,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,precip_1m_metric,solar_radiation) "
                             "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                             (ut, observation_time_unparsed, station_id,temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, solar_radiation))
+
+            # TODO add rain info, update min & max etc
+
+                log.debug ("[%s] station time %s/%s/%s %s:%s:%s"  % (station_id,local_year,local_month,local_day,local_hour,local_minute,local_sec))
+                observation_date = "'{}-{:02d}-{:02d}'".format(local_year, local_month, local_day)
+                observation_datetime = "'{}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}'".format(local_year, local_month, local_day, local_hour, local_minute, local_sec)
+                q = "select min_temp,max_temp from station_daily where station_id='{}' and id={}".format(station_id, observation_date)
+                log.debug ("[%s] station query day [%s]" % (station_id, q))
+                cur.execute(q)
+                daily_record = cur.fetchone()
+                if daily_record is None:
+                    # insert new record
+                    f2in = {"station_id": "'"+station_id+"'",
+                            "id":observation_date,
+                            "min_temp": temp_c,
+                            "min_temp_absolute_time": ut,
+                            "min_temp_local_time": observation_datetime,
+                            "max_temp": temp_c,
+                            "max_temp_absolute_time": ut,
+                            "max_temp_local_time": observation_datetime,
+                            }
+                    if precip_daily_total is not None:
+                        f2in["precip_total_metric"] = precip_daily_total
+
+                    do_insert(cur, "station_daily", f2in)
+
+                    # if daily_record of last day is present, update it for records / totrain
+                else:
+                    # update the record
+                    f2upd = {"precip_total_metric":precip_daily_total}
+                    min_temp = daily_record[0]
+                    max_temp = daily_record[0]
+                    if temp_c < min_temp:
+                        f2upd ["min_temp"] = temp_c
+                        f2upd ["min_temp_absolute_time"] = ut
+                        f2upd ["min_temp_local_time"] = observation_datetime
+                    if temp_c > max_temp:
+                        f2upd ["max_temp"] = temp_c
+                        f2upd ["max_temp_absolute_time"] = ut
+                        f2upd ["max_temp_local_time"] = observation_datetime
+
+                    do_update(cur, "station_daily", "where station_id='{}' and id={}".format(station_id,observation_date), f2upd)
+
+
         except:
             log.exception("Fetching/updating [%s]" % station_id)
 
