@@ -40,6 +40,9 @@ CREATE TABLE observation (
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 create unique index station_time on observation (station_id,observation_time_unix);
 
+alter table observation add precip_daily_metric double default 0 after precip_1m_metric;
+alter table observation modify precip_daily_metric double default null;
+
 # alter table observation change observation_time_rfc822 observation_time_unparsed  varchar(64) ;
 # alter table observation add precip_1m_metric DOUBLE after pressure_mb;
 
@@ -67,6 +70,31 @@ CREATE table station (
     PRIMARY KEY (id)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
+# added 21.11.28
+alter table station add precip_total_metric double after priority;
+
+alter table station add max_temp double after precip_total_metric;
+alter table station add max_temp_time int unsigned after max_temp;
+
+alter table station add min_temp double after max_temp;
+alter table station add min_temp_time int unsigned after min_temp;
+
+
+
+# station daily statistics
+drop table if exists station_daily;
+CREATE table station_daily (
+    id_unix_time_day int unsigned NOT NULL,
+    precip_total_metric double,
+    min_temp double,
+    min_temp_time int unsigned,
+    max_temp double,
+    max_temp_time int unsigned,
+    PRIMARY KEY (id_unix_time_day)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
+
+#alter table station_daily add max_temp_time int unsigned after max_temp;
+#alter table station_daily add min_temp_time int unsigned after min_temp;
 
 
 
