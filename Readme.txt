@@ -44,6 +44,7 @@ CREATE TABLE observation (
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 create unique index station_time on observation (station_id,observation_time_unix);
 
+alter table observation add observation_localtime datetime after observation_time_unix;
 alter table observation add precip_daily_metric double after precip_1m_metric;
 alter table observation modify precip_daily_metric double default null;
 

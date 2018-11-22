@@ -150,7 +150,7 @@ def update_station(section_name):
 
                 # grab local time year, month and day
                 # "Last Updated on November 21, 10:52 AM CET"
-                m = re.match("Last Updated on ([^ ]+) ([\d]+), ([\d]+):([\d]+) (AM|PM) (.*)+", observation_time_unparsed)
+                m = re.match("Last Updated on ([^ ]+) ([\d]+), ([\d]+):([\d]+) (AM|PM) (.*)", observation_time_unparsed)
                 if m is not None:
                     local_month = month_string_to_number(m.group(1))
                     local_day = int(m.group(2))
