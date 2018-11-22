@@ -11,6 +11,9 @@ git config user.email
 git branch --set-upstream master origin/master
 git push origin master
 
+to commit
+git commit -m "reason"
+git push origin master
 
 # Pre-requisites: sudo apt-get install python-mysqldb
 # mysql --user=observations -pobservations --host=localhost observations
@@ -24,9 +27,9 @@ CREATE DATABASE observations;
 USE observations;
 
 drop table if exists observation;
-
 CREATE TABLE observation (
   observation_time_unix int unsigned NOT NULL,
+  observation_localtime datetime,
   observation_time_unparsed varchar(64),
   station_id  varchar(32),
   temp_c  DOUBLE,
@@ -36,11 +39,12 @@ CREATE TABLE observation (
   wind_gust_kph DOUBLE,
   pressure_mb DOUBLE,
   precip_1m_metric DOUBLE,      /* precipitation in mm per min */
+  precip_daily_metric DOUBLE,   /* daily precipitation in mm per min */
   solar_radiation DOUBLE
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 create unique index station_time on observation (station_id,observation_time_unix);
 
-alter table observation add precip_daily_metric double default 0 after precip_1m_metric;
+alter table observation add precip_daily_metric double after precip_1m_metric;
 alter table observation modify precip_daily_metric double default null;
 
 # alter table observation change observation_time_rfc822 observation_time_unparsed  varchar(64) ;
@@ -67,6 +71,7 @@ CREATE table station (
     id  varchar(32),
     label varchar(64),
     priority int,
+    precip_total_y double,
     precip_total_metric double,
 
     min_temp double,
@@ -80,14 +85,17 @@ CREATE table station (
     PRIMARY KEY (id)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
-# added 21.11.28
-#alter table station add precip_total_metric double after priority;
+# added 22.11.28
+alter table station add precip_total_y double after priority;
+alter table station add precip_total_metric double after precip_total_y;
 
-#alter table station add max_temp double after precip_total_metric;
-#alter table station add max_temp_absolute_time int unsigned after max_temp;
+alter table station add min_temp double after precip_total_metric;
+alter table station add min_temp_absolute_time int unsigned after min_temp;
+alter table station add min_temp_local_time datetime after min_temp_absolute_time;
 
-#alter table station add min_temp double after max_temp;
-#alter table station add min_temp_absolute_time int unsigned after min_temp;
+alter table station add max_temp double after min_temp_local_time;
+alter table station add max_temp_absolute_time int unsigned after max_temp;
+alter table station add max_temp_local_time datetime after max_temp_absolute_time;
 
 
 
@@ -162,3 +170,6 @@ select station.label, averages.period,averages.wind_kph,averages.wind_degrees, a
 db purge script
 
 0 0 * * * mysql --user=observations -pobservations --host=localhost observations -e "delete from observation where observation_time_unix<unix_timestamp()-(3600*24*2);" > $HOME/logs/purgedbo.log 2>&1
+
+delete from station_daily;delete from station;delete from averages;delete from observation;
+

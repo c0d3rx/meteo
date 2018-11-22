@@ -1,4 +1,3 @@
-import MySQLdb
 import sys
 import email.utils as email_utils
 import getopt
@@ -9,6 +8,8 @@ import re
 import time
 import datetime
 import math
+import MySQLdb
+import MySQLdb.cursors
 import pytz
 import traceback
 from multiprocessing.dummy import Pool as ThreadPoll
@@ -47,11 +48,29 @@ def usage():
     sys.exit(1)
 
 
+def get_float_in_tree(tree, name, defaultval=None):
+    ele = tree.find(name)
+    if ele is None:
+        return defaultval
+
+    vals = ele.text
+    try:
+        rv = float(vals)
+    except (ValueError, TypeError):
+        rv = defaultval
+
+    return rv
+
+
+
 def do_update(cur, tbname, wherecond, f2upd):
+    if len(f2upd) == 0:
+        return
     sets=""
     comma=""
     for fname, fval in f2upd.iteritems():
-        sets += comma+fname+"="+str(fval)
+        fval2 = "NULL" if fval is None else fval
+        sets += comma+fname+"="+str(fval2)
         comma = ", "
     q = "update {} set {} {}".format(tbname, sets, wherecond)
     log.debug ("do_update [%s]" % q)
@@ -59,12 +78,16 @@ def do_update(cur, tbname, wherecond, f2upd):
 
 
 def do_insert(cur, tbname, f2in):
+    if len(f2in) == 0:
+        return
+
     values = ""
     intos = ""
     comma=""
     for fname, fval in f2in.iteritems():
         intos += comma+fname
-        values += comma+str(fval)
+        fval2 = "NULL" if fval is None else fval
+        values += comma+str(fval2)
         comma = ", "
     q = "insert into {} ({}) values ({})".format(tbname, intos, values)
     log.debug ("do_insert [%s]" % q)
@@ -134,23 +157,21 @@ def update_station(section_name):
     # year is missing, try to get from ut TODO: change year for different timezones
                     local_year = datetime.datetime.fromtimestamp(ut).year
                     local_hour = int(m.group(3))
-                    if m.group(5) == 'PM':
+                    if m.group(5) == 'PM' and local_hour != '12':
                         local_hour += 12
                     local_minute = int(m.group(4))
                     local_sec = datetime.datetime.fromtimestamp(ut).second
 
-                temp_c = tree.find("temp_c").text
+                temp_c = get_float_in_tree(tree, "temp_c")
                 relative_humidity = tree.find("relative_humidity").text
                 if relative_humidity is not None:
                     if relative_humidity.endswith("%"):
                         relative_humidity = relative_humidity[:-1]
+                        relative_humidity = float(relative_humidity)
 
-                wind_degrees = tree.find("wind_degrees").text
-                if float(wind_degrees) < 0:
-                    wind_degrees = None
-
-                wind_mph = tree.find("wind_mph").text
-                if float(wind_mph) >= 0:
+                wind_degrees = get_float_in_tree(tree, "wind_degrees")
+                wind_mph = get_float_in_tree(tree, "wind_mph")
+                if (wind_mph is not None) and wind_mph >= 0:
                     wind_kph = float(wind_mph)*1.609344
                 else:
                     wind_kph = None
@@ -170,7 +191,6 @@ def update_station(section_name):
                 except (ValueError, TypeError):
                     precip_1m_metric=None
 
-
                 pressure_mb = tree.find("pressure_mb").text
                 solar_radiation = tree.find("solar_radiation").text
 
@@ -178,8 +198,7 @@ def update_station(section_name):
                 try:
                     precip_daily_total = float(mval) * 2.54
                 except (ValueError, TypeError):
-                    precip_daily_total=None
-
+                    precip_daily_total = None
 
             elif station_type in ("Weather Display", "WD"):
                 response = requests.get(station_url, timeout=8)
@@ -218,24 +237,39 @@ def update_station(section_name):
                 raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
 
             # print "precipit %s" % precip_1m_metric
-            con = MySQLdb.connect(dbhost, dbuser, dbpasswd, dbname)
-            # cur = con.cursor(MySQLdb.cursors.DictCursor)
+
+            con = MySQLdb.connect(dbhost, dbuser, dbpasswd, dbname)  #  cursorclass=MySQLdb.cursors.DictCursor
             cur = con.cursor()
-            cur.execute("replace into station (id,label,priority) values (%s,%s,%s)", (station_id, station_name, priority))
 
             cur.execute("select observation_time_unix from observation where observation_time_unix=%s and station_id='%s'" % (ut, station_id))
+
             observation = cur.fetchone()
             if observation is None:
-                cur.execute("insert into observation "
-                            "(observation_time_unix,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,precip_1m_metric,solar_radiation) "
-                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                            (ut, observation_time_unparsed, station_id,temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, solar_radiation))
+                # get station info
+                q = "select precip_total_y,precip_total_metric, min_temp, max_temp from station where id='{}'".format(station_id)
+                cur.execute(q)
+                station_record = cur.fetchone()
+                if station_record is not None:
+                    station_precip_y, station_precip, station_min_temp, station_max_temp = station_record
+                    if station_precip_y is None:
+                        station_precip_y = 0.
+                else:
+                    log.debug ("[%s] creating record.." % station_id)
+                    cur.execute("insert into station (id,label,priority) values (%s,%s,%s)", (station_id, station_name, priority))
+                    station_precip = station_min_temp = station_max_temp = None
+                    station_precip_y = 0.
 
-            # TODO add rain info, update min & max etc
+                observation_date = "'{}-{:02d}-{:02d}'".format(local_year, local_month, local_day)
+                observation_datetime = "{}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(local_year, local_month, local_day, local_hour, local_minute, local_sec)
+
+                cur.execute("insert into observation "
+                            "(observation_time_unix,observation_localtime,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,precip_1m_metric,precip_daily_metric,solar_radiation) "
+                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                            (ut, observation_datetime,observation_time_unparsed, station_id, temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, precip_daily_total, solar_radiation))
+
+                observation_datetime = "'"+observation_datetime+"'"
 
                 log.debug ("[%s] station time %s/%s/%s %s:%s:%s"  % (station_id,local_year,local_month,local_day,local_hour,local_minute,local_sec))
-                observation_date = "'{}-{:02d}-{:02d}'".format(local_year, local_month, local_day)
-                observation_datetime = "'{}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}'".format(local_year, local_month, local_day, local_hour, local_minute, local_sec)
                 q = "select min_temp,max_temp from station_daily where station_id='{}' and id={}".format(station_id, observation_date)
                 log.debug ("[%s] station query day [%s]" % (station_id, q))
                 cur.execute(q)
@@ -243,35 +277,63 @@ def update_station(section_name):
                 if daily_record is None:
                     # insert new record
                     f2in = {"station_id": "'"+station_id+"'",
-                            "id":observation_date,
-                            "min_temp": temp_c,
-                            "min_temp_absolute_time": ut,
-                            "min_temp_local_time": observation_datetime,
-                            "max_temp": temp_c,
-                            "max_temp_absolute_time": ut,
-                            "max_temp_local_time": observation_datetime,
-                            }
+                            "id": observation_date}
+
+                    if temp_c is not None:
+                        f2in["min_temp"] = temp_c
+                        f2in["min_temp_absolute_time"] = ut
+                        f2in["min_temp_local_time"] = observation_datetime
+
+                        f2in["max_temp"] = temp_c
+                        f2in["max_temp_absolute_time"] = ut
+                        f2in["max_temp_local_time"] = observation_datetime
+
                     if precip_daily_total is not None:
                         f2in["precip_total_metric"] = precip_daily_total
 
                     do_insert(cur, "station_daily", f2in)
 
-                    # if daily_record of last day is present, update it for records / totrain
+                    q = "update station set precip_total_y=precip_total_metric where id='{}'".format(station_id)
+                    log.debug("[%s] updating precip_total_y [%s]" % (station_id,q))
+                    cur.execute(q)
+                    station_precip_y = precip_daily_total
+                    if station_precip_y is None:
+                        station_precip_y = 0.
+
+
                 else:
                     # update the record
-                    f2upd = {"precip_total_metric":precip_daily_total}
-                    min_temp = daily_record[0]
-                    max_temp = daily_record[0]
-                    if temp_c < min_temp:
-                        f2upd ["min_temp"] = temp_c
-                        f2upd ["min_temp_absolute_time"] = ut
-                        f2upd ["min_temp_local_time"] = observation_datetime
-                    if temp_c > max_temp:
-                        f2upd ["max_temp"] = temp_c
-                        f2upd ["max_temp_absolute_time"] = ut
-                        f2upd ["max_temp_local_time"] = observation_datetime
+                    f2upd = {}
+                    if precip_daily_total is not None:
+                        f2upd["precip_total_metric"] = precip_daily_total
+                    if temp_c is not None:
+                        min_temp, max_temp = daily_record
+                        if (min_temp is None)or temp_c < min_temp:
+                            f2upd["min_temp"] = temp_c
+                            f2upd["min_temp_absolute_time"] = ut
+                            f2upd["min_temp_local_time"] = observation_datetime
+                        if (max_temp is None) or temp_c > max_temp:
+                            f2upd["max_temp"] = temp_c
+                            f2upd["max_temp_absolute_time"] = ut
+                            f2upd["max_temp_local_time"] = observation_datetime
 
                     do_update(cur, "station_daily", "where station_id='{}' and id={}".format(station_id,observation_date), f2upd)
+
+                # eventually update station min/max temp & tot rain
+                f2upd = {}
+                if temp_c is not None:
+                    if (station_max_temp is None) or (temp_c > station_max_temp):
+                        f2upd["max_temp"] = temp_c
+                        f2upd["max_temp_absolute_time"] = ut
+                        f2upd["max_temp_local_time"] = observation_datetime
+                    if (station_min_temp is None) or (temp_c < station_min_temp):
+                        f2upd["min_temp"] = temp_c
+                        f2upd["min_temp_absolute_time"] = ut
+                        f2upd["min_temp_local_time"] = observation_datetime
+                if precip_daily_total is not None:
+                    f2upd["precip_total_metric"] = precip_daily_total+station_precip_y
+
+                do_update(cur, "station", "where id='{}'".format(station_id), f2upd)
 
 
         except:
