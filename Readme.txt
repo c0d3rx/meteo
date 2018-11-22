@@ -15,6 +15,9 @@ to commit
 git commit -m "reason"
 git push origin master
 
+to store credentials
+git config credential.helper store
+
 # Pre-requisites: sudo apt-get install python-mysqldb
 # mysql --user=observations -pobservations --host=localhost observations
 
