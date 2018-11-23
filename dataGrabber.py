@@ -332,7 +332,7 @@ def update_station(section_name):
                     do_update(cur, "station_daily", "where station_id='{}' and id={}".format(station_id,observation_date), f2upd)
 
                 # eventually update station min/max temp & tot rain
-                f2upd = {}
+                f2upd = {"last_seen_absolute_time":ut, "last_seen_local_time":observation_datetime}
                 if temp_c is not None:
                     if (station_max_temp is None) or (temp_c > station_max_temp):
                         f2upd["max_temp"] = temp_c

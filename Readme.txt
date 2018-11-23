@@ -75,6 +75,11 @@ CREATE table station (
     id  varchar(32),
     label varchar(64),
     priority int,
+
+    last_seen_absolute_time int unsigned,
+    last_seen_local_time DATETIME,
+
+
     precip_total_y double,
     precip_total_metric double,
 
@@ -89,7 +94,7 @@ CREATE table station (
     PRIMARY KEY (id)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
-# added 22.11.28
+# added 22.11.18
 alter table station add precip_total_y double after priority;
 alter table station add precip_total_metric double after precip_total_y;
 
@@ -100,6 +105,12 @@ alter table station add min_temp_local_time datetime after min_temp_absolute_tim
 alter table station add max_temp double after min_temp_local_time;
 alter table station add max_temp_absolute_time int unsigned after max_temp;
 alter table station add max_temp_local_time datetime after max_temp_absolute_time;
+
+# added 23.11.18
+
+alter table station add last_seen_absolute_time int unsigned after priority;
+alter table station add last_seen_local_time DATETIME after last_seen_absolute_time;
+
 
 
 
@@ -169,6 +180,9 @@ select from_unixtime(observation_time_unix),station_id,wind_kph,wind_gust_kph fr
 
 # kobo
 select station.label, averages.period,averages.wind_kph,averages.wind_degrees, averages.temp_c , averages.relative_humidity, averages.pressure_mb , averages.precip_1m_metric*60 as  precip_1h_metric from averages,station where averages.station_id=station.id and averages.wind_kph is not null order by averages.period asc,station.priority asc, averages.period asc limit 1;
+
+# last updated
+select id, from_unixtime(last_seen_absolute_time) from station order by last_seen_local_time desc;
 
 
 db purge script
