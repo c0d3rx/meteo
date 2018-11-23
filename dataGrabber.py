@@ -95,6 +95,27 @@ def do_insert(cur, tbname, f2in):
     cur.execute(q)
 
 
+# insert into averages(station_id,period,temp_c) values ('XYZ',120,18) on duplicate key update station_id='XYZ',period=120,temp_c=20,wind_degrees=NULL;
+def do_insert_update(cur, tbname, f2in):
+
+    if len(f2in) == 0:
+        return
+    values = ""
+    intos = ""
+    comma=""
+    sets=""
+    for fname, fval in f2in.iteritems():
+        intos += comma+fname
+        fval2 = "NULL" if fval is None else fval
+        values += comma+str(fval2)
+        sets += comma+fname+"="+str(fval2)
+        comma = ", "
+
+    q = "insert into {} ({}) values ({}) on duplicate key update {}".format(tbname, intos, values, sets)
+    log.debug ("do_insert_update [%s]" % q)
+    cur.execute(q)
+
+
 
 def month_string_to_number(string):
     m = {
@@ -118,6 +139,10 @@ def month_string_to_number(string):
         return out
     except:
         raise ValueError('Not a month')
+
+def add_dict(di, key, val):
+    di[key] = val
+    return 1 if val is not None else 0
 
 def update_station(section_name):
     matchx = sectionRe.match(section_name)
@@ -430,9 +455,24 @@ def update_station(section_name):
             avgrain = accrain / cntrain if cntrain >= minsamples else None
 
             log.debug("[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples))
-
-            upd = "replace into averages ( station_id, period, pressure_mb, relative_humidity, temp_c, wind_kph, wind_degrees, precip_1m_metric) values (%s,%s,%s,%s,%s,%s,%s,%s)"
-            cur.execute(upd, (station_id, delta, avgpress, avghu, tavg, out, at, avgrain))
+            r2upd = {}
+            nf=0
+            nf+=add_dict(r2upd, "wind_kph", out)
+            nf+=add_dict(r2upd, "wind_degrees", at)
+            nf+=add_dict(r2upd, "pressure_mb", avgpress)
+            nf+=add_dict(r2upd, "relative_humidity", avghu)
+            nf+=add_dict(r2upd, "temp_c", tavg)
+            nf+=add_dict(r2upd, "precip_1m_metric", avgrain)
+            log.debug("[%s] to update= %s" % (station_name, nf))
+            if nf == 0:
+                # delete the record
+                log.debug("[%s] deleted record for delta= %s" % (station_name, delta))
+                cur.execute ("delete from averages where station_id='{}' and period={}".format(station_id, delta))
+            else:
+                # update or insert record
+                add_dict(r2upd, "station_id","'{}'".format(station_id))
+                add_dict(r2upd, "period",delta)
+                do_insert_update (cur,"averages",r2upd)
 
         # garbage collector
         # cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
