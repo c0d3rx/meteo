@@ -16,6 +16,7 @@ from multiprocessing.dummy import Pool as ThreadPoll
 import os
 import logging
 import logging.handlers
+import random
 
 configFile = "wind.ini"
 
@@ -239,7 +240,7 @@ def update_station(section_name):
                     except IndexError:  # upload data on site is not atomic for some station, so try another request for full data
                         log.debug("[%s] data incomplete (%s records): retry" % (station_name, len(record)))
                         retr -= 1
-                    if retr>0: time.sleep(.6)
+                    if retr>0: time.sleep(random.randint(300,5000)/1000.)
                 if not ok:
                     log.error ("[%s] data incomplete [%s], len=%s" % (station_name, data, len(record)))
                     raise IndexError("data incomplete! See log for detail")
