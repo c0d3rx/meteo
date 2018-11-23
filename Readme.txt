@@ -12,7 +12,7 @@ git branch --set-upstream master origin/master
 git push origin master
 
 to commit
-git commit -m "reason"
+git commit <files> -m "reason"
 git push origin master
 
 to store credentials
