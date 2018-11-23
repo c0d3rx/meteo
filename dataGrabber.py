@@ -201,7 +201,8 @@ def update_station(section_name):
                     precip_daily_total = None
 
             elif station_type in ("Weather Display", "WD"):
-                retr = 2
+                retr = 5
+                ok = False
                 while retr > 0:
                     response = requests.get(station_url, timeout=8)
                     data = response.content
@@ -234,10 +235,14 @@ def update_station(section_name):
                         precip_1m_metric = float(record[10])
                         precip_daily_total = float(record[165])
                         retr = 0
+                        ok=True
                     except IndexError:  # upload data on site is not atomic for some station, so try another request for full data
                         log.debug("[%s] data incomplete (%s records): retry" % (station_name, len(record)))
                         retr -= 1
-                    if retr>0: time.sleep(.3)
+                    if retr>0: time.sleep(.6)
+                if not ok:
+                    log.error ("[%s] data incomplete [%s], len=%s" % (station_name, data, len(record)))
+                    raise IndexError("data incomplete! See log for detail")
 
             else:
                 raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
