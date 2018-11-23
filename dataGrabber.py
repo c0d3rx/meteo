@@ -201,37 +201,43 @@ def update_station(section_name):
                     precip_daily_total = None
 
             elif station_type in ("Weather Display", "WD"):
-                response = requests.get(station_url, timeout=8)
-                data = response.content
-                record = data.split(' ')
+                retr = 2
+                while retr > 0:
+                    response = requests.get(station_url, timeout=8)
+                    data = response.content
+                    record = data.split(' ')
+                    station_timezone = config.get(section_name, "timezone")
+                    try:
+                        observation_time_unparsed = record[141]+"/"+record[36]+"/"+record[35]+" - "+record[29]+":"+record[30]+":"+record[31]
+                        local_year = int(record[141])
+                        local_month = int(record[36])
+                        local_day = int(record[35])
+                        local_hour = int(record[29])
+                        local_minute = int(record[30])
+                        local_sec = int(record[31])
 
-                station_timezone = config.get(section_name, "timezone")
+                        loc_dt = pytz.timezone(station_timezone)
+                        dtx = datetime.datetime(int(record[141]), int(record[36]), int(record[35]),
+                                                int(record[29]), int(record[30]), int(record[31]))
+                        dt = loc_dt.localize(dtx)
+                        ut = time.mktime(dt.timetuple())
+                        #  ut -= pytz.utc.localize(datetime.datetime.utcnow()).astimezone(loc_dt).dst().seconds
 
-                observation_time_unparsed = record[141]+"/"+record[36]+"/"+record[35]+" - "+record[29]+":"+record[30]+":"+record[31]
-                local_year = int(record[141])
-                local_month = int(record[36])
-                local_day = int(record[35])
-                local_hour = int(record[29])
-                local_minute = int(record[30])
-                local_sec = int(record[31])
-
-                loc_dt = pytz.timezone(station_timezone)
-                dtx = datetime.datetime(int(record[141]), int(record[36]), int(record[35]),
-                                        int(record[29]), int(record[30]), int(record[31]))
-                dt = loc_dt.localize(dtx)
-                ut = time.mktime(dt.timetuple())
-                #  ut -= pytz.utc.localize(datetime.datetime.utcnow()).astimezone(loc_dt).dst().seconds
-
-                log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
-                temp_c = float(record[4])
-                relative_humidity = float(record[5])
-                wind_degrees = float(record[3])
-                wind_kph = float(record[2])*1.852
-                wind_gust_kph = float(record[133])*1.852
-                pressure_mb = float(record[6])
-                solar_radiation = float(record[127])
-                precip_1m_metric = float(record[10])
-                precip_daily_total = float(record[165])
+                        log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
+                        temp_c = float(record[4])
+                        relative_humidity = float(record[5])
+                        wind_degrees = float(record[3])
+                        wind_kph = float(record[2])*1.852
+                        wind_gust_kph = float(record[133])*1.852
+                        pressure_mb = float(record[6])
+                        solar_radiation = float(record[127])
+                        precip_1m_metric = float(record[10])
+                        precip_daily_total = float(record[165])
+                        retr = 0
+                    except IndexError:  # upload data on site is not atomic for some station, so try another request for full data
+                        log.debug("[%s] data incomplete (%s records): retry" % (station_name, len(record)))
+                        retr -= 1
+                    if retr>0: time.sleep(.3)
 
             else:
                 raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
@@ -395,26 +401,10 @@ def update_station(section_name):
                     accrain += precip_1m_metric
                     cntrain += 1
 
-            # wind
-            if cnt >= minsamples:
-                out = avg / cnt
-            else:
-                out = None
-            # pressure
-            if cntpress >= minsamples:
-                avgpress = press/cntpress
-            else:
-                avgpress = None
-            # humidity
-            if cnthu >= minsamples:
-                avghu = hu/cnthu
-            else:
-                avghu = None
-            # temperature
-            if cntt >= minsamples:
-                tavg = ta / cntt
-            else:
-                tavg = None
+            out = avg / cnt if cnt >= minsamples else None  # wind
+            avgpress = press/cntpress if cntpress >= minsamples else None # pressure
+            avghu = hu/cnthu if cnthu >= minsamples else None # humidity
+            tavg = ta / cntt if cntt >= minsamples else None # temp
 
             # wind direction
             if cntd >= minsamples:
@@ -431,10 +421,7 @@ def update_station(section_name):
             else:
                 at = None
 
-            if cntrain >= minsamples:
-                avgrain = accrain / cntrain
-            else:
-                avgrain = None
+            avgrain = accrain / cntrain if cntrain >= minsamples else None
 
             log.debug("[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples))
 
@@ -544,5 +531,3 @@ if __name__ == "__main__":
     if os.path.exists("/tmp/killgrabber"):
         os.remove("/tmp/killgrabber")
         log.info("stopped by file ")
-
-
