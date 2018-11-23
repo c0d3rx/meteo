@@ -157,328 +157,329 @@ def update_station(section_name):
     con = None
     try:
         station_id = config.get(section_name, "id")
-        try:
-            local_day=None
-            local_month=None
-            local_year = None
-            local_hour = None
-            local_minute = None
-            local_sec = None
-            if station_type in ("Weather Underground", "WU"):
+        local_day=None
+        local_month=None
+        local_year = None
+        local_hour = None
+        local_minute = None
+        local_sec = None
+        if station_type in ("Weather Underground", "WU"):
 
-                response = requests.get(station_url, timeout=8)
-                tree = ElementTree.fromstring(response.content)
-                observation_time_rfc822 = tree.find("observation_time_rfc822").text
-                observation_time_unparsed = tree.find("observation_time").text
+            response = requests.get(station_url, timeout=8)
+            tree = ElementTree.fromstring(response.content)
+            observation_time_rfc822 = tree.find("observation_time_rfc822").text
+            observation_time_unparsed = tree.find("observation_time").text
 
-                ut = email_utils.mktime_tz(email_utils.parsedate_tz(observation_time_rfc822))
-                log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
+            ut = email_utils.mktime_tz(email_utils.parsedate_tz(observation_time_rfc822))
+            log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name,observation_time_rfc822, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
 
-                # grab local time year, month and day
-                # "Last Updated on November 21, 10:52 AM CET"
-                m = re.match("Last Updated on ([^ ]+) ([\d]+), ([\d]+):([\d]+) (AM|PM) (.*)", observation_time_unparsed)
-                if m is not None:
-                    local_month = month_string_to_number(m.group(1))
-                    local_day = int(m.group(2))
+            # grab local time year, month and day
+            # "Last Updated on November 21, 10:52 AM CET"
+            m = re.match("Last Updated on ([^ ]+) ([\d]+), ([\d]+):([\d]+) (AM|PM) (.*)", observation_time_unparsed)
+            if m is not None:
+                local_month = month_string_to_number(m.group(1))
+                local_day = int(m.group(2))
     # year is missing, try to get from ut TODO: change year for different timezones
-                    local_year = datetime.datetime.fromtimestamp(ut).year
-                    local_hour = int(m.group(3))
-                    if m.group(5) == 'PM' and local_hour != '12':
-                        local_hour += 12
-                    local_minute = int(m.group(4))
-                    local_sec = datetime.datetime.fromtimestamp(ut).second
+                local_year = datetime.datetime.fromtimestamp(ut).year
+                local_hour = int(m.group(3))
+                if m.group(5) == 'PM' and local_hour != '12':
+                    local_hour += 12
+                local_minute = int(m.group(4))
+                local_sec = datetime.datetime.fromtimestamp(ut).second
 
-                temp_c = get_float_in_tree(tree, "temp_c")
-                relative_humidity = tree.find("relative_humidity").text
-                if relative_humidity is not None:
-                    if relative_humidity.endswith("%"):
-                        relative_humidity = relative_humidity[:-1]
-                        relative_humidity = float(relative_humidity)
+            temp_c = get_float_in_tree(tree, "temp_c")
+            relative_humidity = tree.find("relative_humidity").text
+            if relative_humidity is not None:
+                if relative_humidity.endswith("%"):
+                    relative_humidity = relative_humidity[:-1]
+                    relative_humidity = float(relative_humidity)
 
-                wind_degrees = get_float_in_tree(tree, "wind_degrees")
-                wind_mph = get_float_in_tree(tree, "wind_mph")
-                if (wind_mph is not None) and wind_mph >= 0:
-                    wind_kph = float(wind_mph)*1.609344
-                else:
-                    wind_kph = None
-
-                wind_gust_mph = tree.find("wind_gust_mph").text
-                wind_gust_kph = None
-                if wind_gust_mph is not None:
-                    if float(wind_gust_mph) >= 0:
-                        wind_gust_kph = float(wind_gust_mph)*1.609344
-                    else:
-                        wind_gust_kph = None
-
-                mval = tree.find ("precip_1hr_in").text
-                try:
-                    precip_1h_metric = float(mval) * 2.54
-                    precip_1m_metric = precip_1h_metric/60.
-                except (ValueError, TypeError):
-                    precip_1m_metric=None
-
-                pressure_mb = tree.find("pressure_mb").text
-                solar_radiation = tree.find("solar_radiation").text
-
-                mval = tree.find ("precip_today_in").text
-                try:
-                    precip_daily_total = float(mval) * 2.54
-                except (ValueError, TypeError):
-                    precip_daily_total = None
-
-            elif station_type in ("Weather Display", "WD"):
-                retr = 5
-                ok = False
-                while retr > 0:
-                    response = requests.get(station_url, timeout=8)
-                    data = response.content
-                    record = data.split(' ')
-                    station_timezone = config.get(section_name, "timezone")
-                    try:
-                        observation_time_unparsed = record[141]+"/"+record[36]+"/"+record[35]+" - "+record[29]+":"+record[30]+":"+record[31]
-                        local_year = int(record[141])
-                        local_month = int(record[36])
-                        local_day = int(record[35])
-                        local_hour = int(record[29])
-                        local_minute = int(record[30])
-                        local_sec = int(record[31])
-
-                        loc_dt = pytz.timezone(station_timezone)
-                        dtx = datetime.datetime(int(record[141]), int(record[36]), int(record[35]),
-                                                int(record[29]), int(record[30]), int(record[31]))
-                        dt = loc_dt.localize(dtx)
-                        ut = time.mktime(dt.timetuple())
-                        #  ut -= pytz.utc.localize(datetime.datetime.utcnow()).astimezone(loc_dt).dst().seconds
-
-                        log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
-                        temp_c = float(record[4])
-                        relative_humidity = float(record[5])
-                        wind_degrees = float(record[3])
-                        wind_kph = float(record[2])*1.852
-                        wind_gust_kph = float(record[133])*1.852
-                        pressure_mb = float(record[6])
-                        solar_radiation = float(record[127])
-                        precip_1m_metric = float(record[10])
-                        precip_daily_total = float(record[165])
-                        retr = 0
-                        ok=True
-                    except IndexError:  # upload data on site is not atomic for some station, so try another request for full data
-                        log.debug("[%s] data incomplete (%s records): retry" % (station_name, len(record)))
-                        retr -= 1
-                    if retr>0: time.sleep(random.randint(300,5000)/1000.)
-                if not ok:
-                    log.error ("[%s] data incomplete [%s], len=%s" % (station_name, data, len(record)))
-                    raise IndexError("data incomplete! See log for detail")
-
+            wind_degrees = get_float_in_tree(tree, "wind_degrees")
+            wind_mph = get_float_in_tree(tree, "wind_mph")
+            if (wind_mph is not None) and wind_mph >= 0:
+                wind_kph = float(wind_mph)*1.609344
             else:
-                raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
+                wind_kph = None
 
-            # print "precipit %s" % precip_1m_metric
-
-            con = MySQLdb.connect(dbhost, dbuser, dbpasswd, dbname)  #  cursorclass=MySQLdb.cursors.DictCursor
-            cur = con.cursor()
-
-            cur.execute("select observation_time_unix from observation where observation_time_unix=%s and station_id='%s'" % (ut, station_id))
-
-            observation = cur.fetchone()
-            if observation is None:
-                # get station info
-                q = "select precip_total_y,precip_total_metric, min_temp, max_temp from station where id='{}'".format(station_id)
-                cur.execute(q)
-                station_record = cur.fetchone()
-                if station_record is not None:
-                    station_precip_y, station_precip, station_min_temp, station_max_temp = station_record
-                    if station_precip_y is None:
-                        station_precip_y = 0.
+            wind_gust_mph = tree.find("wind_gust_mph").text
+            wind_gust_kph = None
+            if wind_gust_mph is not None:
+                if float(wind_gust_mph) >= 0:
+                    wind_gust_kph = float(wind_gust_mph)*1.609344
                 else:
-                    log.debug ("[%s] creating record.." % station_id)
-                    cur.execute("insert into station (id,label,priority) values (%s,%s,%s)", (station_id, station_name, priority))
-                    station_precip = station_min_temp = station_max_temp = None
+                    wind_gust_kph = None
+
+            mval = tree.find ("precip_1hr_in").text
+            try:
+                precip_1h_metric = float(mval) * 2.54
+                precip_1m_metric = precip_1h_metric/60.
+            except (ValueError, TypeError):
+                precip_1m_metric=None
+
+            pressure_mb = tree.find("pressure_mb").text
+            solar_radiation = tree.find("solar_radiation").text
+
+            mval = tree.find ("precip_today_in").text
+            try:
+                precip_daily_total = float(mval) * 2.54
+            except (ValueError, TypeError):
+                precip_daily_total = None
+
+        elif station_type in ("Weather Display", "WD"):
+            retr = 5
+            ok = False
+            while retr > 0:
+                response = requests.get(station_url, timeout=8)
+                data = response.content
+                record = data.split(' ')
+                station_timezone = config.get(section_name, "timezone")
+                try:
+                    observation_time_unparsed = record[141]+"/"+record[36]+"/"+record[35]+" - "+record[29]+":"+record[30]+":"+record[31]
+                    local_year = int(record[141])
+                    local_month = int(record[36])
+                    local_day = int(record[35])
+                    local_hour = int(record[29])
+                    local_minute = int(record[30])
+                    local_sec = int(record[31])
+
+                    loc_dt = pytz.timezone(station_timezone)
+                    dtx = datetime.datetime(int(record[141]), int(record[36]), int(record[35]),
+                                            int(record[29]), int(record[30]), int(record[31]))
+                    dt = loc_dt.localize(dtx)
+                    ut = time.mktime(dt.timetuple())
+                    #  ut -= pytz.utc.localize(datetime.datetime.utcnow()).astimezone(loc_dt).dst().seconds
+
+                    log.debug("[%s] data time [%s], unixtime [%d] parsed local time [%s]" % (station_name, observation_time_unparsed, ut, datetime.datetime.fromtimestamp(ut).strftime("%Y-%m-%d %H:%M:%S")))
+                    temp_c = float(record[4])
+                    relative_humidity = float(record[5])
+                    wind_degrees = float(record[3])
+                    wind_kph = float(record[2])*1.852
+                    wind_gust_kph = float(record[133])*1.852
+                    pressure_mb = float(record[6])
+                    solar_radiation = float(record[127])
+                    precip_1m_metric = float(record[10])
+                    precip_daily_total = float(record[165])
+                    retr = 0
+                    ok=True
+                except IndexError:  # upload data on site is not atomic for some station, so try another request for full data
+                    log.debug("[%s] data incomplete (%s records): retry" % (station_name, len(record)))
+                    retr -= 1
+                if retr>0: time.sleep(random.randint(300,5000)/1000.)
+            if not ok:
+                log.error ("[%s] data incomplete [%s], len=%s" % (station_name, data, len(record)))
+                raise IndexError("data incomplete! See log for detail")
+
+        else:
+            raise NameError("[%s] station type [%s] not supported" % (station_name, station_type))
+
+        # print "precipit %s" % precip_1m_metric
+
+        con = MySQLdb.connect(dbhost, dbuser, dbpasswd, dbname)  #  cursorclass=MySQLdb.cursors.DictCursor
+        cur = con.cursor()
+
+        cur.execute("select observation_time_unix from observation where observation_time_unix=%s and station_id='%s'" % (ut, station_id))
+
+        observation = cur.fetchone()
+        if observation is None:
+            # get station info
+            q = "select precip_total_y,precip_total_metric, min_temp, max_temp from station where id='{}'".format(station_id)
+            cur.execute(q)
+            station_record = cur.fetchone()
+            if station_record is not None:
+                station_precip_y, station_precip, station_min_temp, station_max_temp = station_record
+                if station_precip_y is None:
+                    station_precip_y = 0.
+            else:
+                log.debug ("[%s] creating record.." % station_id)
+                cur.execute("insert into station (id,label,priority) values (%s,%s,%s)", (station_id, station_name, priority))
+                station_precip = station_min_temp = station_max_temp = None
+                station_precip_y = 0.
+
+            observation_date = "'{}-{:02d}-{:02d}'".format(local_year, local_month, local_day)
+            observation_datetime = "{}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(local_year, local_month, local_day, local_hour, local_minute, local_sec)
+
+            cur.execute("insert into observation "
+                        "(observation_time_unix,observation_localtime,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,precip_1m_metric,precip_daily_metric,solar_radiation) "
+                        "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (ut, observation_datetime,observation_time_unparsed, station_id, temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, precip_daily_total, solar_radiation))
+
+            observation_datetime = "'"+observation_datetime+"'"
+
+            log.debug ("[%s] station time %s/%s/%s %s:%s:%s"  % (station_id,local_year,local_month,local_day,local_hour,local_minute,local_sec))
+            q = "select min_temp,max_temp from station_daily where station_id='{}' and id={}".format(station_id, observation_date)
+            log.debug ("[%s] station query day [%s]" % (station_id, q))
+            cur.execute(q)
+            daily_record = cur.fetchone()
+            if daily_record is None:
+                # insert new record
+                f2in = {"station_id": "'"+station_id+"'",
+                        "id": observation_date}
+
+                if temp_c is not None:
+                    f2in["min_temp"] = temp_c
+                    f2in["min_temp_absolute_time"] = ut
+                    f2in["min_temp_local_time"] = observation_datetime
+
+                    f2in["max_temp"] = temp_c
+                    f2in["max_temp_absolute_time"] = ut
+                    f2in["max_temp_local_time"] = observation_datetime
+
+                if precip_daily_total is not None:
+                    f2in["precip_total_metric"] = precip_daily_total
+
+                do_insert(cur, "station_daily", f2in)
+
+                q = "update station set precip_total_y=precip_total_metric where id='{}'".format(station_id)
+                log.debug("[%s] updating precip_total_y [%s]" % (station_id,q))
+                cur.execute(q)
+                station_precip_y = precip_daily_total
+                if station_precip_y is None:
                     station_precip_y = 0.
 
-                observation_date = "'{}-{:02d}-{:02d}'".format(local_year, local_month, local_day)
-                observation_datetime = "{}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(local_year, local_month, local_day, local_hour, local_minute, local_sec)
 
-                cur.execute("insert into observation "
-                            "(observation_time_unix,observation_localtime,observation_time_unparsed,station_id,temp_c,relative_humidity,wind_degrees,wind_kph,wind_gust_kph,pressure_mb,precip_1m_metric,precip_daily_metric,solar_radiation) "
-                            "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                            (ut, observation_datetime,observation_time_unparsed, station_id, temp_c, relative_humidity, wind_degrees,wind_kph, wind_gust_kph, pressure_mb, precip_1m_metric, precip_daily_total, solar_radiation))
-
-                observation_datetime = "'"+observation_datetime+"'"
-
-                log.debug ("[%s] station time %s/%s/%s %s:%s:%s"  % (station_id,local_year,local_month,local_day,local_hour,local_minute,local_sec))
-                q = "select min_temp,max_temp from station_daily where station_id='{}' and id={}".format(station_id, observation_date)
-                log.debug ("[%s] station query day [%s]" % (station_id, q))
-                cur.execute(q)
-                daily_record = cur.fetchone()
-                if daily_record is None:
-                    # insert new record
-                    f2in = {"station_id": "'"+station_id+"'",
-                            "id": observation_date}
-
-                    if temp_c is not None:
-                        f2in["min_temp"] = temp_c
-                        f2in["min_temp_absolute_time"] = ut
-                        f2in["min_temp_local_time"] = observation_datetime
-
-                        f2in["max_temp"] = temp_c
-                        f2in["max_temp_absolute_time"] = ut
-                        f2in["max_temp_local_time"] = observation_datetime
-
-                    if precip_daily_total is not None:
-                        f2in["precip_total_metric"] = precip_daily_total
-
-                    do_insert(cur, "station_daily", f2in)
-
-                    q = "update station set precip_total_y=precip_total_metric where id='{}'".format(station_id)
-                    log.debug("[%s] updating precip_total_y [%s]" % (station_id,q))
-                    cur.execute(q)
-                    station_precip_y = precip_daily_total
-                    if station_precip_y is None:
-                        station_precip_y = 0.
-
-
-                else:
-                    # update the record
-                    f2upd = {}
-                    if precip_daily_total is not None:
-                        f2upd["precip_total_metric"] = precip_daily_total
-                    if temp_c is not None:
-                        min_temp, max_temp = daily_record
-                        if (min_temp is None)or temp_c < min_temp:
-                            f2upd["min_temp"] = temp_c
-                            f2upd["min_temp_absolute_time"] = ut
-                            f2upd["min_temp_local_time"] = observation_datetime
-                        if (max_temp is None) or temp_c > max_temp:
-                            f2upd["max_temp"] = temp_c
-                            f2upd["max_temp_absolute_time"] = ut
-                            f2upd["max_temp_local_time"] = observation_datetime
-
-                    do_update(cur, "station_daily", "where station_id='{}' and id={}".format(station_id,observation_date), f2upd)
-
-                # eventually update station min/max temp & tot rain
-                f2upd = {"last_seen_absolute_time":ut, "last_seen_local_time":observation_datetime}
+            else:
+                # update the record
+                f2upd = {}
+                if precip_daily_total is not None:
+                    f2upd["precip_total_metric"] = precip_daily_total
                 if temp_c is not None:
-                    if (station_max_temp is None) or (temp_c > station_max_temp):
-                        f2upd["max_temp"] = temp_c
-                        f2upd["max_temp_absolute_time"] = ut
-                        f2upd["max_temp_local_time"] = observation_datetime
-                    if (station_min_temp is None) or (temp_c < station_min_temp):
+                    min_temp, max_temp = daily_record
+                    if (min_temp is None)or temp_c < min_temp:
                         f2upd["min_temp"] = temp_c
                         f2upd["min_temp_absolute_time"] = ut
                         f2upd["min_temp_local_time"] = observation_datetime
-                if precip_daily_total is not None:
-                    f2upd["precip_total_metric"] = precip_daily_total+station_precip_y
+                    if (max_temp is None) or temp_c > max_temp:
+                        f2upd["max_temp"] = temp_c
+                        f2upd["max_temp_absolute_time"] = ut
+                        f2upd["max_temp_local_time"] = observation_datetime
 
-                do_update(cur, "station", "where id='{}'".format(station_id), f2upd)
+                do_update(cur, "station_daily", "where station_id='{}' and id={}".format(station_id,observation_date), f2upd)
+
+            # eventually update station min/max temp & tot rain
+            f2upd = {"last_seen_absolute_time":ut, "last_seen_local_time":observation_datetime}
+            if temp_c is not None:
+                if (station_max_temp is None) or (temp_c > station_max_temp):
+                    f2upd["max_temp"] = temp_c
+                    f2upd["max_temp_absolute_time"] = ut
+                    f2upd["max_temp_local_time"] = observation_datetime
+                if (station_min_temp is None) or (temp_c < station_min_temp):
+                    f2upd["min_temp"] = temp_c
+                    f2upd["min_temp_absolute_time"] = ut
+                    f2upd["min_temp_local_time"] = observation_datetime
+            if precip_daily_total is not None:
+                f2upd["precip_total_metric"] = precip_daily_total+station_precip_y
+
+            do_update(cur, "station", "where id='{}'".format(station_id), f2upd)
 
 
-        except:
-            log.exception("Fetching/updating [%s]" % station_id)
 
         # compute avg values for wind / wind prevalent direction
-        exec ("ct= %s" % config.get(section_name,"averages"))
-        # ct = ((300, 1), (600, 2), (3600, 4), (7200, 5))
-        for delta, minsamples in ct:
+            exec ("ct= %s" % config.get(section_name,"averages"))
+            # ct = ((300, 1), (600, 2), (3600, 4), (7200, 5))
+            for delta, minsamples in ct:
 
-            cur.execute("select wind_kph, wind_degrees, temp_c, relative_humidity, pressure_mb, precip_1m_metric  from observation "
-                        "where station_id=%s and observation_time_unix>unix_timestamp()-%s", (station_id, delta))
-            rows = cur.fetchall()
-            out = None
-            cnt = 0
-            avg = 0
-            cntd = 0
-            vee = 0
-            vnn = 0
-            ta = 0
-            cntt = 0
-            hu = 0
-            cnthu = 0
-            press = 0
-            cntpress = 0
-            cntrain = 0
-            accrain = 0
+                cur.execute("select wind_kph, wind_degrees, temp_c, relative_humidity, pressure_mb, precip_1m_metric  from observation "
+                            "where station_id=%s and observation_time_unix>unix_timestamp()-%s", (station_id, delta))
+                rows = cur.fetchall()
+                out = None
+                cnt = 0
+                avg = 0
+                cntd = 0
+                vee = 0
+                vnn = 0
+                ta = 0
+                cntt = 0
+                hu = 0
+                cnthu = 0
+                press = 0
+                cntpress = 0
+                cntrain = 0
+                accrain = 0
 
-# compute average values
-            for row in rows:
-                # wind / wind direction
-                if row[0] is not None:
-                    wind_kph = float(row[0])
-                    cnt += 1
-                    avg += wind_kph
-                    if row[1] is not None:
-                        wind_degrees = float(row[1])
-                        cntd += 1
-                        vee += wind_kph*math.sin(2*math.pi*((90-wind_degrees)/360))
-                        vnn += wind_kph*math.cos(2*math.pi*((90-wind_degrees)/360))
-                # temperature
-                if row[2] is not None:
-                    temp_c = float(row[2])
-                    ta += temp_c
-                    cntt += 1
-                # relative humidity
-                if row[3] is not None:
-                    relative_humidity = float(row[3])
-                    hu += relative_humidity
-                    cnthu += 1
-                # pressure
-                if row[4] is not None:
-                    pressure_mb = float(row[4])
-                    press += pressure_mb
-                    cntpress += 1
-                # print "Samples  %s " % (row[0])
-                if row[5] is not None:
-                    precip_1m_metric = float(row[5])
-                    accrain += precip_1m_metric
-                    cntrain += 1
+    # compute average values
+                for row in rows:
+                    # wind / wind direction
+                    if row[0] is not None:
+                        wind_kph = float(row[0])
+                        cnt += 1
+                        avg += wind_kph
+                        if row[1] is not None:
+                            wind_degrees = float(row[1])
+                            cntd += 1
+                            vee += wind_kph*math.sin(2*math.pi*((90-wind_degrees)/360))
+                            vnn += wind_kph*math.cos(2*math.pi*((90-wind_degrees)/360))
+                    # temperature
+                    if row[2] is not None:
+                        temp_c = float(row[2])
+                        ta += temp_c
+                        cntt += 1
+                    # relative humidity
+                    if row[3] is not None:
+                        relative_humidity = float(row[3])
+                        hu += relative_humidity
+                        cnthu += 1
+                    # pressure
+                    if row[4] is not None:
+                        pressure_mb = float(row[4])
+                        press += pressure_mb
+                        cntpress += 1
+                    # print "Samples  %s " % (row[0])
+                    if row[5] is not None:
+                        precip_1m_metric = float(row[5])
+                        accrain += precip_1m_metric
+                        cntrain += 1
 
-            out = avg / cnt if cnt >= minsamples else None  # wind
-            avgpress = press/cntpress if cntpress >= minsamples else None # pressure
-            avghu = hu/cnthu if cnthu >= minsamples else None # humidity
-            tavg = ta / cntt if cntt >= minsamples else None # temp
+                out = avg / cnt if cnt >= minsamples else None  # wind
+                avgpress = press/cntpress if cntpress >= minsamples else None # pressure
+                avghu = hu/cnthu if cnthu >= minsamples else None # humidity
+                tavg = ta / cntt if cntt >= minsamples else None # temp
 
-            # wind direction
-            if cntd >= minsamples:
-                vee /= cntd
-                vnn /= cntd
-                average_speed = math.sqrt(vee*vee+vnn*vnn)
-                # at = math.atan2(vnn,vee)
-                at = math.degrees(math.atan2(vee, vnn))
-                at = 90-at
-                if at < 0:
-                    at += 360
-                if at == 360:
-                    at = 0
-            else:
-                at = None
+                # wind direction
+                if cntd >= minsamples:
+                    vee /= cntd
+                    vnn /= cntd
+                    average_speed = math.sqrt(vee*vee+vnn*vnn)
+                    # at = math.atan2(vnn,vee)
+                    at = math.degrees(math.atan2(vee, vnn))
+                    at = 90-at
+                    if at < 0:
+                        at += 360
+                    if at == 360:
+                        at = 0
+                else:
+                    at = None
 
-            avgrain = accrain / cntrain if cntrain >= minsamples else None
+                avgrain = accrain / cntrain if cntrain >= minsamples else None
 
-            log.debug("[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples))
-            r2upd = {}
-            nf=0
-            nf+=add_dict(r2upd, "wind_kph", out)
-            nf+=add_dict(r2upd, "wind_degrees", at)
-            nf+=add_dict(r2upd, "pressure_mb", avgpress)
-            nf+=add_dict(r2upd, "relative_humidity", avghu)
-            nf+=add_dict(r2upd, "temp_c", tavg)
-            nf+=add_dict(r2upd, "precip_1m_metric", avgrain)
-            log.debug("[%s] to update= %s" % (station_name, nf))
-            if nf == 0:
-                # delete the record
-                log.debug("[%s] deleted record for delta= %s" % (station_name, delta))
-                cur.execute ("delete from averages where station_id='{}' and period={}".format(station_id, delta))
-            else:
-                # update or insert record
-                add_dict(r2upd, "station_id","'{}'".format(station_id))
-                add_dict(r2upd, "period",delta)
-                do_insert_update (cur,"averages",r2upd)
+                log.debug("[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples))
+                r2upd = {}
+                nf=0
+                nf+=add_dict(r2upd, "wind_kph", out)
+                nf+=add_dict(r2upd, "wind_degrees", at)
+                nf+=add_dict(r2upd, "pressure_mb", avgpress)
+                nf+=add_dict(r2upd, "relative_humidity", avghu)
+                nf+=add_dict(r2upd, "temp_c", tavg)
+                nf+=add_dict(r2upd, "precip_1m_metric", avgrain)
+                log.debug("[%s] to update= %s" % (station_name, nf))
+                if nf == 0:
+                    # delete the record
+                    log.debug("[%s] deleted record for delta= %s" % (station_name, delta))
+                    cur.execute ("delete from averages where station_id='{}' and period={}".format(station_id, delta))
+                else:
+                    # update or insert record
+                    add_dict(r2upd, "station_id","'{}'".format(station_id))
+                    add_dict(r2upd, "period",delta)
+                    do_insert_update (cur,"averages",r2upd)
 
-        # garbage collector
-        # cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
+            # garbage collector
+            # cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
 
-    except (MySQLdb.Error, requests.HTTPError, ElementTree.ParseError, IndexError) as e:
-        log.exception("")
+    except (KeyboardInterrupt, SystemExit):
+        log.warning ("System exit or ctrl c")
+        raise
+
+    except:
+        log.exception("other exception")
 
     finally:
         if con:
