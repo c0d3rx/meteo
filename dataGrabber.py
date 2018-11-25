@@ -479,7 +479,7 @@ def update_station(section_name):
         raise
 
     except:
-        log.exception("other exception")
+        log.exception("[%s] other exception" % station_id)
 
     finally:
         if con:
