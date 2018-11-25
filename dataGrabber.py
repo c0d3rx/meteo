@@ -257,7 +257,7 @@ def update_station(section_name):
                     wind_gust_kph = float(record[133])*1.852
                     pressure_mb = float(record[6])
                     solar_radiation = float(record[127])
-                    precip_1m_metric = float(record[10])/60.
+                    precip_1m_metric = float(record[10])
                     precip_daily_total = float(record[165])
                     retr = 0
                     ok=True
