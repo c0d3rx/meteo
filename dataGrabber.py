@@ -371,108 +371,106 @@ def update_station(section_name):
 
             do_update(cur, "station", "where id='{}'".format(station_id), f2upd)
 
-
-
         # compute avg values for wind / wind prevalent direction
-            exec ("ct= %s" % config.get(section_name,"averages"))
-            # ct = ((300, 1), (600, 2), (3600, 4), (7200, 5))
-            for delta, minsamples in ct:
+        exec ("ct= %s" % config.get(section_name,"averages"))
+        # ct = ((300, 1), (600, 2), (3600, 4), (7200, 5))
+        for delta, minsamples in ct:
 
-                cur.execute("select wind_kph, wind_degrees, temp_c, relative_humidity, pressure_mb, precip_1m_metric  from observation "
-                            "where station_id=%s and observation_time_unix>unix_timestamp()-%s", (station_id, delta))
-                rows = cur.fetchall()
-                out = None
-                cnt = 0
-                avg = 0
-                cntd = 0
-                vee = 0
-                vnn = 0
-                ta = 0
-                cntt = 0
-                hu = 0
-                cnthu = 0
-                press = 0
-                cntpress = 0
-                cntrain = 0
-                accrain = 0
+            cur.execute("select wind_kph, wind_degrees, temp_c, relative_humidity, pressure_mb, precip_1m_metric  from observation "
+                        "where station_id=%s and observation_time_unix>unix_timestamp()-%s", (station_id, delta))
+            rows = cur.fetchall()
+            out = None
+            cnt = 0
+            avg = 0
+            cntd = 0
+            vee = 0
+            vnn = 0
+            ta = 0
+            cntt = 0
+            hu = 0
+            cnthu = 0
+            press = 0
+            cntpress = 0
+            cntrain = 0
+            accrain = 0
 
-    # compute average values
-                for row in rows:
-                    # wind / wind direction
-                    if row[0] is not None:
-                        wind_kph = float(row[0])
-                        cnt += 1
-                        avg += wind_kph
-                        if row[1] is not None:
-                            wind_degrees = float(row[1])
-                            cntd += 1
-                            vee += wind_kph*math.sin(2*math.pi*((90-wind_degrees)/360))
-                            vnn += wind_kph*math.cos(2*math.pi*((90-wind_degrees)/360))
-                    # temperature
-                    if row[2] is not None:
-                        temp_c = float(row[2])
-                        ta += temp_c
-                        cntt += 1
-                    # relative humidity
-                    if row[3] is not None:
-                        relative_humidity = float(row[3])
-                        hu += relative_humidity
-                        cnthu += 1
-                    # pressure
-                    if row[4] is not None:
-                        pressure_mb = float(row[4])
-                        press += pressure_mb
-                        cntpress += 1
-                    # print "Samples  %s " % (row[0])
-                    if row[5] is not None:
-                        precip_1m_metric = float(row[5])
-                        accrain += precip_1m_metric
-                        cntrain += 1
+# compute average values
+            for row in rows:
+                # wind / wind direction
+                if row[0] is not None:
+                    wind_kph = float(row[0])
+                    cnt += 1
+                    avg += wind_kph
+                    if row[1] is not None:
+                        wind_degrees = float(row[1])
+                        cntd += 1
+                        vee += wind_kph*math.sin(2*math.pi*((90-wind_degrees)/360))
+                        vnn += wind_kph*math.cos(2*math.pi*((90-wind_degrees)/360))
+                # temperature
+                if row[2] is not None:
+                    temp_c = float(row[2])
+                    ta += temp_c
+                    cntt += 1
+                # relative humidity
+                if row[3] is not None:
+                    relative_humidity = float(row[3])
+                    hu += relative_humidity
+                    cnthu += 1
+                # pressure
+                if row[4] is not None:
+                    pressure_mb = float(row[4])
+                    press += pressure_mb
+                    cntpress += 1
+                # print "Samples  %s " % (row[0])
+                if row[5] is not None:
+                    precip_1m_metric = float(row[5])
+                    accrain += precip_1m_metric
+                    cntrain += 1
 
-                out = avg / cnt if cnt >= minsamples else None  # wind
-                avgpress = press/cntpress if cntpress >= minsamples else None # pressure
-                avghu = hu/cnthu if cnthu >= minsamples else None # humidity
-                tavg = ta / cntt if cntt >= minsamples else None # temp
+            out = avg / cnt if cnt >= minsamples else None  # wind
+            avgpress = press/cntpress if cntpress >= minsamples else None # pressure
+            avghu = hu/cnthu if cnthu >= minsamples else None # humidity
+            tavg = ta / cntt if cntt >= minsamples else None # temp
 
-                # wind direction
-                if cntd >= minsamples:
-                    vee /= cntd
-                    vnn /= cntd
-                    average_speed = math.sqrt(vee*vee+vnn*vnn)
-                    # at = math.atan2(vnn,vee)
-                    at = math.degrees(math.atan2(vee, vnn))
-                    at = 90-at
-                    if at < 0:
-                        at += 360
-                    if at == 360:
-                        at = 0
-                else:
-                    at = None
+            # wind direction
+            if cntd >= minsamples:
+                vee /= cntd
+                vnn /= cntd
+                average_speed = math.sqrt(vee*vee+vnn*vnn)
+                # at = math.atan2(vnn,vee)
+                at = math.degrees(math.atan2(vee, vnn))
+                at = 90-at
+                if at < 0:
+                    at += 360
+                if at == 360:
+                    at = 0
+            else:
+                at = None
 
-                avgrain = accrain / cntrain if cntrain >= minsamples else None
+            avgrain = accrain / cntrain if cntrain >= minsamples else None
 
-                log.debug("[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples))
-                r2upd = {}
-                nf=0
-                nf+=add_dict(r2upd, "wind_kph", out)
-                nf+=add_dict(r2upd, "wind_degrees", at)
-                nf+=add_dict(r2upd, "pressure_mb", avgpress)
-                nf+=add_dict(r2upd, "relative_humidity", avghu)
-                nf+=add_dict(r2upd, "temp_c", tavg)
-                nf+=add_dict(r2upd, "precip_1m_metric", avgrain)
-                log.debug("[%s] to update= %s" % (station_name, nf))
-                if nf == 0:
-                    # delete the record
-                    log.debug("[%s] deleted record for delta= %s" % (station_name, delta))
-                    cur.execute ("delete from averages where station_id='{}' and period={}".format(station_id, delta))
-                else:
-                    # update or insert record
-                    add_dict(r2upd, "station_id","'{}'".format(station_id))
-                    add_dict(r2upd, "period",delta)
-                    do_insert_update (cur,"averages",r2upd)
+            log.debug("[%s] for %s wind samples %d (%s), wind_dir samples %d (%s) (required %s)" % (station_name, delta, cnt, out, cntd, at, minsamples))
+            r2upd = {}
+            nf = 0
+            nf += add_dict(r2upd, "wind_kph", out)
+            nf += add_dict(r2upd, "wind_degrees", at)
+            nf += add_dict(r2upd, "pressure_mb", avgpress)
+            nf += add_dict(r2upd, "relative_humidity", avghu)
+            nf += add_dict(r2upd, "temp_c", tavg)
+            nf += add_dict(r2upd, "precip_1m_metric", avgrain)
+            log.debug("[%s] to update= %s" % (station_name, nf))
+            if nf == 0:
+                # delete the record
+                log.debug("[%s] deleted record for delta= %s" % (station_name, delta))
+                cur.execute ("delete from averages where station_id='{}' and period={}".format(station_id, delta))
+            else:
+                # update or insert record
+                add_dict(r2upd, "station_id","'{}'".format(station_id))
+                add_dict(r2upd, "period",delta)
+                do_insert_update (cur,"averages",r2upd)
 
-            # garbage collector
-            # cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
+        # garbage collector
+        # cur.execute("delete from observation where observation_time_unix<unix_timestamp()-(3600*24*7)")
 
     except (KeyboardInterrupt, SystemExit):
         log.warning ("System exit or ctrl c")
